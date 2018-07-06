@@ -1,0 +1,14 @@
+-R . erc20
+DSL.v
+Model.v
+Prop.v
+Spec.v
+
+-R ../libs erc20
+../libs/AbsModel.v
+../libs/BNat.v
+../libs/LibEx.v
+../libs/Mapping.v
+../libs/TMap.v
+../libs/TMapLib.v
+../libs/Types.v
