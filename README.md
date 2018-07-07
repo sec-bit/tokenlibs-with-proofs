@@ -96,6 +96,9 @@ Record state: Type :=
 Definition contract := TContract state.
 ```
 
+**Note** The current model in this repository only covers components that are neccesary to define and prove the following specifications and high-level properties. Other components, such the gas price and limit, nonce and a comprehensive block descriptions, will be added later.
+
+
 ### Represent the Solidity Implementation in Coq
 
 In order to prove a contract, we need to first represent it in Coq. Instead of supporting every syntax structure of Solidity, we choose to design a domain specific language in Coq whose syntax is simple but enough to express most Solidity contracts. [`DSL.v`](erc20/DSL.v) includes a definition of such domain specific language. By carefully manipulating notations in Coq, DSL can event present a close look as Solidity. For example, ```transfer()``` in DSL is defined as below in [`DSL.v`](erc20/DSL.v):
