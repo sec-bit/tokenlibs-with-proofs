@@ -210,6 +210,10 @@ The correctness of proofs in this repo still relies on the correctness of all de
 * DSLs for Ethereum Contracts. https://www.michaelburge.us/2018/05/15/ethereum-chess-engine.html
 * Formal Verification of Ethereum Contracts (Yoichi's attempts). https://github.com/pirapira/ethereum-formal-verification-overview
 
+## Acknowledgement
+
+We would like to thank Yi Tang ([ConsenSys](https://consensys.net/)), Yuhui Wu ([轻信科技](http://www.ledgergo.com/)), and Zhong Zhuang ([DEx.top](https://dex.top/)) for their suggestions and help.
+
 ## Disclaimers
 
 This repository is to demonstrate how the real world smart contracts can be formally proved in Coq, rather than providing smart contracts that can be used in arbitrary usage scenarios. 
