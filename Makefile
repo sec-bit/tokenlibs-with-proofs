@@ -1,6 +1,6 @@
 include config.mk
 
-SUBDIRS := erc20
+SUBDIRS := erc20 erc20_burnable
 
 all: $(SUBDIRS)
 	@for dir in $(SUBDIRS); do \

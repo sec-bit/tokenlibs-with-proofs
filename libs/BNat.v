@@ -659,3 +659,11 @@ Ltac decbeqnat x y :=
 Ltac decbltnat x y :=
   let Hb := fresh "Hb" in
     (destruct (blt_nat_dec x y) as [Hb | Hb]; simplbnat).
+
+Lemma neq_decidable: forall (m n : nat), Decidable.decidable (m <> n).
+Proof.
+  intros m n.
+  case (Nat.eq_dec m n); intros H.
+  - right; auto.
+  - left; auto.
+Qed.
