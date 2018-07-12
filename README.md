@@ -1,6 +1,10 @@
 # Token Libraries with Proofs
 
-This repository collects correctness proofs of Ethereum token contracts *wrt.* given specifications and high-level properties. All of them are accomplished in Coq. Currently, an ERC20 token contract and its proof are included, but more will be added in the future.
+This repository collects correctness proofs of Ethereum token contracts *wrt.* given specifications and high-level properties. All of them are accomplished in Coq. 
+
+Proofs of following contracts are included, and more will be added in the future.
+* Basic ERC20 contract: [`erc20`](erc20)
+* Burnable ERC20 contract: [`erc20_burnable`](erc20_burnable)
 
 ## Requirements
 
