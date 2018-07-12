@@ -1,10 +1,10 @@
--R . erc20
+-R . proof
 DSL.v
 Model.v
 Prop.v
 Spec.v
 
--R ../libs erc20
+-R ../libs proof
 ../libs/AbsModel.v
 ../libs/BNat.v
 ../libs/LibEx.v
