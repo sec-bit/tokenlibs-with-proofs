@@ -667,3 +667,12 @@ Proof.
   - right; auto.
   - left; auto.
 Qed.
+
+Lemma beq_decidable: forall (x y: bool), Decidable.decidable (x = y).
+Proof.
+  intros x y.
+  destruct x; destruct y;
+    solve [ (left; reflexivity) |
+            (right; apply diff_true_false) |
+            (right; apply diff_false_true) ].
+Qed.
