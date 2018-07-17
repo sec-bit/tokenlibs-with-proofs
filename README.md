@@ -1,4 +1,5 @@
 # Token Libraries with Proofs
+[![Build Status](https://travis-ci.org/sec-bit/tokenlibs-with-proofs.svg)](https://travis-ci.org/sec-bit/tokenlibs-with-proofs)
 
 This repository collects correctness proofs of Ethereum token contracts *wrt.* given specifications and high-level properties. All of them are accomplished in Coq. 
 
