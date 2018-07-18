@@ -36,18 +36,8 @@ Delimit Scope dsl_scope with dsl.
 Inductive PrimitiveStmt :=
 | DSL_require (cond: state -> env -> message -> bool)
 | DSL_emit (evt: state -> env -> message -> event)
-| DSL_balances_upd_inc (addr: state -> env -> message -> address)
-                       (expr: state -> env -> message -> uint256)
-| DSL_balances_upd_dec (addr: state -> env -> message -> address)
-                       (expr: state -> env -> message -> uint256)
 | DSL_balances_upd (addr: state -> env -> message -> address)
                    (expr: state -> env -> message -> uint256)
-| DSL_allowed_upd_inc (from: state -> env -> message -> address)
-                      (to: state -> env -> message -> address)
-                      (expr: state -> env -> message -> uint256)
-| DSL_allowed_upd_dec (from: state -> env -> message -> address)
-                      (to: state -> env -> message -> address)
-                      (expr: state -> env -> message -> uint256)
 | DSL_allowed_upd (from: state -> env -> message -> address)
                   (to: state -> env -> message -> address)
                   (expr: state -> env -> message -> uint256)
@@ -100,24 +90,6 @@ Fixpoint dsl_exec_prim
   | DSL_return expr =>
     Stop st (evts ++ (ev_return _ (expr st env msg) :: nil))
 
-  | DSL_balances_upd_inc addr expr =>
-    Next (mk_st (st_symbol st)
-                (st_name st)
-                (st_decimals st)
-                (st_totalSupply st)
-                (a2v_upd_inc (st_balances st) (addr st env msg) (expr st env msg))
-                (st_allowed st))
-         evts
-
-  | DSL_balances_upd_dec addr expr =>
-    Next (mk_st (st_symbol st)
-                (st_name st)
-                (st_decimals st)
-                (st_totalSupply st)
-                (a2v_upd_dec (st_balances st) (addr st env msg) (expr st env msg))
-                (st_allowed st))
-         evts
-
   | DSL_balances_upd addr expr =>
     Next (mk_st (st_symbol st)
                 (st_name st)
@@ -125,24 +97,6 @@ Fixpoint dsl_exec_prim
                 (st_totalSupply st)
                 (st_balances st $+ { (addr st env msg) <- (expr st env msg) })
                 (st_allowed st))
-         evts
-
-  | DSL_allowed_upd_inc from to expr =>
-    Next (mk_st (st_symbol st)
-                (st_name st)
-                (st_decimals st)
-                (st_totalSupply st)
-                (st_balances st)
-                (aa2v_upd_inc (st_allowed st) (from st env msg) (to st env msg) (expr st env msg)))
-         evts
-
-  | DSL_allowed_upd_dec from to expr =>
-    Next (mk_st (st_symbol st)
-                (st_name st)
-                (st_decimals st)
-                (st_totalSupply st)
-                (st_balances st)
-                (aa2v_upd_dec (st_allowed st) (from st env msg) (to st env msg) (expr st env msg)))
          evts
 
   | DSL_allowed_upd from to expr =>
@@ -249,16 +203,20 @@ Notation "'totalSupply'" :=
 Notation "'balances'" :=
   (fun (st: state) (env: env) (msg: message) => st_balances st) : dsl_scope.
 
+Definition dsl_balances_access (addr: state -> env -> message -> address) :=
+  fun (st: state) (env: env) (msg: message) =>
+    (balances%dsl st env msg) (addr st env msg).
 Notation "'balances' '[' addr ']'" :=
-  (fun (st: state) (env: env) (msg: message) =>
-     ((balances%dsl st env msg) (addr st env msg))) : dsl_scope.
+  (dsl_balances_access addr): dsl_scope.
 
 Notation "'allowed'" :=
   (fun (st: state) (env: env) (msg: message) => st_allowed st) : dsl_scope.
 
+Definition dsl_allowed_access (from to: state -> env -> message -> address) :=
+  fun (st: state) (env: env) (msg: message) =>
+    (allowed%dsl st env msg) ((from st env msg), (to st env msg)).
 Notation "'allowed' '[' from ']' '[' to ']'" :=
-  (fun (st: state) (env: env) (msg: message) =>
-     (allowed%dsl st env msg) ((from st env msg), (to st env msg))) : dsl_scope.
+  (dsl_allowed_access from to): dsl_scope.
 
 (* Notations for events (XXX: shall they be generated from solidity?) *)
 Notation "'Transfer' '(' from ',' to ',' value ')'" :=
@@ -294,12 +252,12 @@ Infix "==" := dsl_eq (at level 70): dsl_scope.
 
 Definition dsl_add  :=
   fun x y (st: state) (env: env) (msg: message) =>
-    (x st env msg) + (y st env msg).
+    plus_with_overflow (x st env msg) (y st env msg).
 Infix "+" := dsl_add : dsl_scope.
 
 Definition dsl_sub :=
   fun x y (st: state) (env: env) (msg: message) =>
-    (x st env msg) - (y st env msg).
+    minus_with_underflow (x st env msg) (y st env msg).
 Infix "-" := dsl_sub : dsl_scope.
 
 Definition dsl_or :=
@@ -323,18 +281,26 @@ Notation "'require' '(' cond ')'" :=
   (DSL_require cond) (at level 200) : dsl_scope.
 Notation "'emit' evt" :=
   (DSL_emit evt) (at level 200) : dsl_scope.
-Notation "'balances' '[' addr ']' '+=' expr" :=
-  (DSL_balances_upd_inc addr expr) (at level 0) : dsl_scope.
-Notation "'balances' '[' addr ']' '-=' expr" :=
-  (DSL_balances_upd_dec addr expr) (at level 0) : dsl_scope.
 Notation "'balances' '[' addr ']' '=' expr" :=
   (DSL_balances_upd addr expr) (at level 0) : dsl_scope.
-Notation "'allowed' '[' from ']' '[' to ']' '+=' expr" :=
-  (DSL_allowed_upd_inc from to expr) (at level 0) : dsl_scope.
-Notation "'allowed' '[' from ']' '[' to ']' '-=' expr" :=
-  (DSL_allowed_upd_dec from to expr) (at level 0) : dsl_scope.
+Notation "'balances' '[' addr ']' '+=' expr" :=
+  (DSL_balances_upd addr
+                    (dsl_add (dsl_balances_access addr) expr))
+    (at level 0) : dsl_scope.
+Notation "'balances' '[' addr ']' '-=' expr" :=
+  (DSL_balances_upd addr
+                    (dsl_sub (dsl_balances_access addr) expr))
+    (at level 0) : dsl_scope.
 Notation "'allowed' '[' from ']' '[' to ']' '=' expr" :=
   (DSL_allowed_upd from to expr) (at level 0) : dsl_scope.
+Notation "'allowed' '[' from ']' '[' to ']' '+=' expr" :=
+  (DSL_allowed_upd from to
+                   (dsl_add (dsl_allowed_access from to) expr))
+    (at level 0) : dsl_scope.
+Notation "'allowed' '[' from ']' '[' to ']' '-=' expr" :=
+  (DSL_allowed_upd from to
+                   (dsl_sub (dsl_allowed_access from to) expr))
+    (at level 0) : dsl_scope.
 Notation "'totalSupply' '=' expr" :=
   (DSL_totalSupply_upd expr) (at level 0) : dsl_scope.
 Notation "'symbol' '=' expr" :=
@@ -383,6 +349,17 @@ Notation "'@string' x = expr ; stmt" :=
 
 Require Import Spec.
 
+Definition dsl_sat_spec (fcall: mcall)
+                        (fdsl: Stmt)
+                        (fspec: address -> env -> message -> Spec) : Prop :=
+  forall st env msg this,
+    m_func msg = fcall
+    -> spec_require (fspec this env msg) st
+    -> forall st0 result,
+      dsl_exec fdsl st0 st env msg this nil = result
+      -> spec_trans (fspec this env msg) st (ret_st result)
+         /\ spec_events (fspec this env msg) (ret_st result) (ret_evts result).
+
 Section dsl_transfer_from.
   Open Scope dsl_scope.
 
@@ -418,14 +395,17 @@ Section dsl_transfer_from.
      (@emit Transfer(from, to, value)) ;
      (@return true)).
 
-  (* Auxiliary lemmas *)
   Lemma nat_nooverflow_dsl_nooverflow:
     forall (m: state -> a2v) st env msg,
+      m_func msg = mc_transferFrom _from _to _value ->
       (_from = _to \/ (_from <> _to /\ (m st _to <= MAX_UINT256 - _value)))%nat ->
       ((from == to) ||
        ((fun st env msg => m st (to st env msg)) <= max_uint256 - value))%dsl st env msg = otrue.
   Proof.
-    intros m st env msg Hnat.
+    intros m st env msg Hmcall Hnat.
+
+    apply transferFrom_value_inrange in Hmcall.
+    destruct Hmcall as [_ Hvalue].
 
     unfold "=="%dsl, "<="%dsl, "||"%dsl, "||"%bool, "-"%dsl.
     rewrite (from_immutable st env msg),
@@ -436,30 +416,29 @@ Section dsl_transfer_from.
     - rewrite H. rewrite (Nat.eqb_refl _). reflexivity.
     - destruct H as [Hneq Hle].
       apply Nat.eqb_neq in Hneq. rewrite Hneq.
-      apply Nat.leb_le in Hle. exact Hle.
+      apply Nat.leb_le.
+      rewrite (minus_safe _ _ Hvalue); auto.
   Qed.
 
   (* Manually proved *)
   Lemma transferFrom_dsl_sat_spec_1:
-    forall st env msg this,
-      spec_require (funcspec_transferFrom_1 _from _to _value this env msg) st ->
-      forall st0 result,
-        dsl_exec transferFrom_dsl st0 st env msg this nil = result ->
-        spec_trans (funcspec_transferFrom_1 _from _to _value this env msg) st (ret_st result) /\
-        spec_events (funcspec_transferFrom_1 _from _to _value this env msg) (ret_st result) (ret_evts result).
+    dsl_sat_spec (mc_transferFrom _from _to _value)
+                 transferFrom_dsl
+                 (funcspec_transferFrom_1 _from _to _value).
   Proof.
-    intros st env msg this Hreq st0 result Hexec.
+    unfold dsl_sat_spec.
+    intros st env msg this Hfunc Hreq st0 result Hexec.
 
     simpl in Hreq.
     destruct Hreq as [Hreq_blncs_lo [Hreq_blncs_hi [Hreq_allwd_lo Hreq_allwd_hi]]].
     apply Nat.leb_le in Hreq_blncs_lo.
-    generalize (nat_nooverflow_dsl_nooverflow _ st env msg Hreq_blncs_hi).
+    generalize (nat_nooverflow_dsl_nooverflow _ st env msg Hfunc Hreq_blncs_hi).
     clear Hreq_blncs_hi. intros Hreq_blncs_hi.
     apply Nat.leb_le in Hreq_allwd_lo.
     apply Nat.ltb_lt in Hreq_allwd_hi.
 
     simpl in Hexec.
-    unfold ">="%dsl in Hexec.
+    unfold ">="%dsl, dsl_balances_access in Hexec.
     rewrite (Nat.ltb_antisym _ _) in Hexec.
     rewrite (value_immutable _ _ _) in Hexec.
     rewrite (from_immutable _ _ _) in Hexec.
@@ -469,6 +448,7 @@ Section dsl_transfer_from.
     rewrite Hreq_blncs_hi in Hexec.
     simpl in Hexec.
 
+    unfold dsl_allowed_access in Hexec.
     rewrite (Nat.ltb_antisym _ _) in Hexec.
     rewrite (value_immutable _ _ _) in Hexec.
     rewrite (from_immutable _ _ _) in Hexec.
@@ -482,31 +462,30 @@ Section dsl_transfer_from.
     simpl in Hexec.
 
     unfold funcspec_transferFrom_1.
-    rewrite <- Hexec.
+    rewrite <- Hexec; clear Hexec.
+    unfold "+"%dsl, "-"%dsl.
     repeat rewrite (value_immutable _ _ _).
     repeat rewrite (from_immutable _ _ _).
     repeat rewrite (to_immutable _ _ _).
-    repeat (split; auto).
+    repeat (split; simpl; auto).
   Qed.
 
   Lemma transferFrom_dsl_sat_spec_2:
-    forall st env msg this,
-      spec_require (funcspec_transferFrom_2 _from _to _value this env msg) st ->
-      forall st0 result,
-        dsl_exec transferFrom_dsl st0 st env msg this nil = result ->
-        spec_trans (funcspec_transferFrom_2 _from _to _value this env msg) st (ret_st result) /\
-        spec_events (funcspec_transferFrom_2 _from _to _value this env msg) (ret_st result) (ret_evts result).
+    dsl_sat_spec (mc_transferFrom _from _to _value)
+                 transferFrom_dsl
+                 (funcspec_transferFrom_2 _from _to _value).
   Proof.
-    intros st env msg this Hreq st0 result Hexec.
+    unfold dsl_sat_spec.
+    intros st env msg this Hfunc Hreq st0 result Hexec.
 
     simpl in Hreq. destruct Hreq as [Hreq_blncs_lo [Hreq_blncs_hi [Hreq_allwd_lo Hreq_allwd_hi]]].
-    generalize (nat_nooverflow_dsl_nooverflow _ st env msg Hreq_blncs_hi).
+    generalize (nat_nooverflow_dsl_nooverflow _ st env msg Hfunc Hreq_blncs_hi).
     clear Hreq_blncs_hi. intros Hreq_blncs_hi.
     apply Nat.leb_le in Hreq_blncs_lo.
     apply Nat.leb_le in Hreq_allwd_lo.
 
     simpl in Hexec.
-    unfold ">="%dsl in Hexec.
+    unfold ">="%dsl, dsl_balances_access in Hexec.
     rewrite (Nat.ltb_antisym _ _) in Hexec.
     rewrite (value_immutable _ _ _) in Hexec.
     rewrite (from_immutable _ _ _) in Hexec.
@@ -516,6 +495,7 @@ Section dsl_transfer_from.
     rewrite Hreq_blncs_hi in Hexec.
     simpl in Hexec.
 
+    unfold dsl_allowed_access in Hexec.
     rewrite (Nat.ltb_antisym _ _) in Hexec.
     rewrite (value_immutable _ _ _) in Hexec.
     rewrite (from_immutable _ _ _) in Hexec.
@@ -531,6 +511,7 @@ Section dsl_transfer_from.
 
     unfold funcspec_transferFrom_2.
     rewrite <- Hexec.
+    unfold "+"%dsl, "-"%dsl.
     repeat rewrite (value_immutable _ _ _).
     repeat rewrite (from_immutable _ _ _).
     repeat rewrite (to_immutable _ _ _).
@@ -568,43 +549,47 @@ Section dsl_transfer.
   (* Auxiliary lemmas *)
   Lemma nat_nooverflow_dsl_nooverflow':
     forall (m: state -> a2v) st env msg,
+      m_func msg = mc_transfer _to _value ->
       (m_sender msg = _to \/ (m_sender msg <> _to /\ (m st _to <= MAX_UINT256 - _value)))%nat ->
       ((msg.sender == to) ||
        ((fun st env msg => m st (to st env msg)) <= max_uint256 - value))%dsl st env msg = otrue.
   Proof.
-    intros m st env msg Hnat.
+    intros m st env msg Hfunc Hnat.
+
+    apply transfer_value_inrange in Hfunc.
+    destruct Hfunc as [_ Hvalue].
 
     unfold "||"%dsl, "||"%bool, "=="%dsl, "<="%dsl, "-"%dsl.
     rewrite (to_immutable st env msg),
             (max_uint256_immutable st env msg),
             (value_immutable st env msg).
-
     destruct Hnat.
     - rewrite H. rewrite (Nat.eqb_refl _). reflexivity.
     - destruct H as [Hneq Hle].
       apply Nat.eqb_neq in Hneq. rewrite Hneq.
+      assert (Hlo: (MAX_UINT256 >= _value)%nat);
+        auto.
+      rewrite (minus_safe _ _ Hlo).
       apply Nat.leb_le in Hle. exact Hle.
   Qed.
 
   (* Manually proved *)
   Lemma transfer_dsl_sat_spec:
-    forall st env msg this,
-      spec_require (funcspec_transfer _to _value this env msg) st ->
-      forall st0 result,
-        dsl_exec transfer_dsl st0 st env msg this nil = result ->
-        spec_trans (funcspec_transfer _to _value this env msg) st (ret_st result) /\
-        spec_events (funcspec_transfer _to _value this env msg) (ret_st result) (ret_evts result).
+    dsl_sat_spec (mc_transfer _to _value)
+                 transfer_dsl
+                 (funcspec_transfer _to _value).
   Proof.
-    intros st env msg this Hreq st0 result Hexec.
+    unfold dsl_sat_spec.
+    intros st env msg this Hfunc Hreq st0 result Hexec.
 
     unfold funcspec_transfer in Hreq; simpl in Hreq.
     destruct Hreq as [Hreq_blncs_lo Hreq_blncs_hi].
     unfold ">="%nat in Hreq_blncs_lo. apply Nat.leb_le in Hreq_blncs_lo.
-    generalize(nat_nooverflow_dsl_nooverflow' _ st env msg Hreq_blncs_hi).
+    generalize(nat_nooverflow_dsl_nooverflow' _ st env msg Hfunc Hreq_blncs_hi).
     clear Hreq_blncs_hi. intros Hreq_blncs_hi.
 
     unfold transfer_dsl in Hexec; simpl in Hexec.
-    unfold ">="%dsl in Hexec.
+    unfold ">="%dsl, dsl_balances_access in Hexec.
     rewrite (value_immutable _ _ _) in Hexec.
     rewrite (Nat.ltb_antisym _ _) in Hexec.
     rewrite Hreq_blncs_lo in Hexec; simpl in Hexec.
@@ -613,6 +598,7 @@ Section dsl_transfer.
 
     unfold funcspec_transfer.
     rewrite <- Hexec.
+    unfold "+"%dsl, "-"%dsl.
     repeat rewrite (value_immutable _ _ _).
     repeat rewrite (to_immutable _ _ _).
     repeat (split; auto).
@@ -637,18 +623,17 @@ Section dsl_balanceOf.
 
   (* Manually proved *)
   Lemma balanceOf_dsl_sat_spec:
-    forall st env msg this,
-      spec_require (funcspec_balanceOf _owner this env msg) st ->
-      forall st0 result,
-        dsl_exec balanceOf_dsl st0 st env msg this nil = result ->
-        spec_trans (funcspec_balanceOf _owner this env msg) st (ret_st result) /\
-        spec_events (funcspec_balanceOf _owner this env msg) (ret_st result) (ret_evts result).
+    dsl_sat_spec (mc_balanceOf _owner)
+                 balanceOf_dsl
+                 (funcspec_balanceOf _owner).
   Proof.
-    intros st env msg this Hreq st0 result Hexec.
+    unfold dsl_sat_spec.
+    intros st env msg this _ Hreq st0 result Hexec.
 
     simpl in Hexec.
     unfold funcspec_balanceOf.
     rewrite <- Hexec.
+    unfold dsl_balances_access.
     rewrite (owner_immutable _ _ _).
     repeat (split; auto).
   Qed.
@@ -678,15 +663,14 @@ Section dsl_approve.
 
   (* Manually proved *)
   Lemma approve_dsl_sat_spec:
-    forall st env msg this,
-      spec_require (funcspec_approve _spender _value this env msg) st ->
-      forall st0 result,
-        dsl_exec approve_dsl st0 st env msg this nil = result ->
-        spec_trans (funcspec_approve _spender _value this env msg) st (ret_st result) /\
-        spec_events (funcspec_approve _spender _value this env msg) (ret_st result) (ret_evts result).
+    dsl_sat_spec (mc_approve _spender _value)
+                 approve_dsl
+                 (funcspec_approve _spender _value).
   Proof.
-    intros st env msg this Hreq st0 result Hexec.
+    unfold dsl_sat_spec.
+    intros st env msg this _ Hreq st0 result Hexec.
 
+    simpl in Hreq.
     simpl in Hexec.
     unfold funcspec_approve.
     rewrite <- Hexec.
@@ -717,18 +701,17 @@ Section dsl_allowance.
 
   (* Manually proved *)
   Lemma allowance_dsl_sat_spec:
-    forall st env msg this,
-      spec_require (funcspec_allowance _owner _spender this env msg) st ->
-      forall st0 result,
-        dsl_exec allowance_dsl st0 st env msg this nil = result ->
-        spec_trans (funcspec_allowance _owner _spender this env msg) st (ret_st result) /\
-        spec_events (funcspec_allowance _owner _spender this env msg) (ret_st result) (ret_evts result).
+    dsl_sat_spec (mc_allowance _owner _spender)
+                 allowance_dsl
+                 (funcspec_allowance _owner _spender).
   Proof.
-    intros st env msg this Hreq st0 result Hexec.
+    unfold dsl_sat_spec.
+    intros st env msg this _ Hreq st0 result Hexec.
 
     simpl in Hexec.
     unfold funcspec_allowance.
     rewrite <- Hexec.
+    unfold dsl_allowed_access.
     rewrite (owner_immutable _ _ _).
     rewrite (spender_immutable _ _ _).
     repeat (split; auto).
@@ -772,16 +755,17 @@ Section dsl_constructor.
       st_balances st = $0 ->
       st_allowed st = $0 ->
       forall env msg this,
+        m_func msg = mc_EIP20 _initialAmount _tokenName _decimalUnits _tokenSymbol ->
         spec_require (funcspec_EIP20 _initialAmount _tokenName _decimalUnits _tokenSymbol this env msg) st ->
         forall st0 result,
           dsl_exec ctor_dsl st0 st env msg this nil = result ->
           spec_trans (funcspec_EIP20 _initialAmount _tokenName _decimalUnits _tokenSymbol this env msg) st (ret_st result) /\
           spec_events (funcspec_EIP20 _initialAmount _tokenName _decimalUnits _tokenSymbol this env msg) (ret_st result) (ret_evts result).
   Proof.
-    intros st Hblns_init Hallwd_init env msg this Hreq st0 result Hexec.
+    intros st Hblns_init Hallwd_init env msg this _ Hreq st0 result Hexec.
 
     simpl in Hexec.
-    unfold funcspec_EIP20.
+    simpl.
     rewrite <- Hexec.
     repeat rewrite (initialAmount_immutable _ _ _).
     repeat rewrite (decimalUnits_immutable _ _ _).
