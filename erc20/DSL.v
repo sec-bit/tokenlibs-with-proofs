@@ -395,6 +395,8 @@ Section dsl_transfer_from.
      (@emit Transfer(from, to, value)) ;
      (@return true)).
 
+  (* Auxiliary lemmas *)
+
   Lemma nat_nooverflow_dsl_nooverflow:
     forall (m: state -> a2v) st env msg,
       m_func msg = mc_transferFrom _from _to _value ->
@@ -418,6 +420,56 @@ Section dsl_transfer_from.
       apply Nat.eqb_neq in Hneq. rewrite Hneq.
       apply Nat.leb_le.
       rewrite (minus_safe _ _ Hvalue); auto.
+  Qed.
+
+  Lemma transferFrom_cond_dec:
+    forall st,
+      Decidable.decidable
+        (_from = _to \/ _from <> _to /\ (st_balances st _to <= MAX_UINT256 - _value)%nat).
+  Proof.
+    intros.
+    apply Decidable.dec_or.
+    - apply Nat.eq_decidable.
+    - apply Decidable.dec_and.
+      + apply neq_decidable.
+      + apply Nat.le_decidable.
+  Qed.
+
+  Lemma transferFrom_cond_impl:
+    forall st env msg,
+      m_func msg = mc_transferFrom _from _to _value ->
+      ~ (_from = _to \/ _from <> _to /\ (st_balances st _to <= MAX_UINT256 - _value)%nat) ->
+      (((from == to)
+        || ((fun (st : state) (env : Model.env) (msg : message) =>
+               st_balances st (to st env msg)) <= max_uint256 - value)) st env msg) = ofalse.
+  Proof.
+    intros st env msg Hfunc Hneg.
+
+    apply transferFrom_value_inrange in Hfunc.
+    destruct Hfunc as [_ Hvalue].
+
+    unfold "=="%dsl, "||"%dsl, "||"%bool, "<="%dsl, "-"%dsl.
+    rewrite (from_immutable _ _ _).
+    rewrite (to_immutable _ _ _).
+    rewrite (value_immutable _ _ _).
+    rewrite (max_uint256_immutable _ _ _).
+
+    apply (Decidable.not_or _ _) in Hneg.
+    destruct Hneg as [Hneq Hneg].
+
+    apply Nat.eqb_neq in Hneq.
+    rewrite Hneq; simpl.
+
+    assert (Hvalue': (MAX_UINT256 >= _value)%nat);
+      auto.
+    rewrite (minus_safe _ _ Hvalue').
+
+    apply (Decidable.not_and _ _ (neq_decidable _ _)) in Hneg.
+    destruct Hneg.
+    - apply Nat.eqb_neq in Hneq. apply H in Hneq. inversion Hneq.
+    - apply not_le in H.
+      apply Nat.leb_gt.
+      auto.
   Qed.
 
   (* Manually proved *)
@@ -518,6 +570,156 @@ Section dsl_transfer_from.
     repeat (split; auto).
   Qed.
 
+  (* If no require can be satisfied, transferFrom() must revert to the initial state *)
+  Lemma transferFrom_dsl_revert:
+    forall st env msg this,
+      m_func msg = mc_transferFrom _from _to _value ->
+      ~ spec_require (funcspec_transferFrom_1 _from _to _value this env msg) st ->
+      ~ spec_require (funcspec_transferFrom_2 _from _to _value this env msg) st ->
+      (forall addr0 addr1, (st_allowed st (addr0, addr1) <= MAX_UINT256)%nat) ->
+      forall st0 result,
+        dsl_exec transferFrom_dsl st0 st env msg this nil = result ->
+        result = Stop st0 (ev_revert this :: nil).
+  Proof.
+    unfold funcspec_transferFrom_1, funcspec_transferFrom_2, ">="%nat.
+    intros st env msg this Hfunc Hreq1_neg Hreq2_neg Hallwd_inv st0 result Hexec;
+      simpl in Hreq1_neg, Hreq2_neg.
+
+    assert (Hreq1_impl:
+              (_value <= st_balances st _from)%nat ->
+              (_from = _to \/ _from <> _to /\ (st_balances st _to <= MAX_UINT256 - _value)%nat) ->
+              ~(_value <= st_allowed st (_from, m_sender msg) < MAX_UINT256)).
+    {
+      intros Hvalue.
+      apply (Decidable.or_not_l_iff_1 _ _ (transferFrom_cond_dec _)).
+      generalize Hvalue; clear Hvalue.
+      apply (Decidable.or_not_l_iff_1 _ _ (Nat.le_decidable _ _)).
+
+      apply (Decidable.not_and _ _ (Nat.le_decidable _ _)) in Hreq1_neg.
+      destruct Hreq1_neg.
+      - left; auto.
+      - apply (Decidable.not_and _ _ (transferFrom_cond_dec _)) in H.
+        right; auto.
+    }
+    clear Hreq1_neg.
+
+    assert (Hreq2_impl:
+              (_value <= st_balances st _from)%nat ->
+              (_from = _to \/ _from <> _to /\ (st_balances st _to <= MAX_UINT256 - _value)%nat) ->
+              ~((_value <= st_allowed st (_from, m_sender msg))%nat /\
+                st_allowed st (_from, m_sender msg) = MAX_UINT256)).
+    {
+      intros Hvalue.
+      apply (Decidable.or_not_l_iff_1 _ _ (transferFrom_cond_dec _)).
+      generalize Hvalue; clear Hvalue.
+      apply (Decidable.or_not_l_iff_1 _ _ (Nat.le_decidable _ _)).
+
+      apply (Decidable.not_and _ _ (Nat.le_decidable _ _)) in Hreq2_neg.
+      destruct Hreq2_neg.
+      - left; auto.
+      - apply (Decidable.not_and _ _ (transferFrom_cond_dec _)) in H.
+        right; auto.
+    }
+    clear Hreq2_neg.
+
+    simpl in Hexec.
+
+    destruct (le_dec _value (st_balances st _from)).
+    - (* balances[from] >= value *)
+      generalize (Hreq1_impl l); clear Hreq1_impl; intros Hreq1_impl.
+      generalize (Hreq2_impl l); clear Hreq2_impl; intros Hreq2_impl.
+
+      apply Nat.leb_le in l.
+
+      simpl in Hexec.
+      unfold ">="%dsl, dsl_balances_access in Hexec.
+      rewrite (Nat.ltb_antisym _ _) in Hexec.
+      rewrite (from_immutable _ _ _) in Hexec.
+      rewrite (value_immutable _ _ _) in Hexec.
+      rewrite l in Hexec; simpl in Hexec.
+
+      destruct (transferFrom_cond_dec st).
+      + (* from = to \/ balances[to] < MAX_UINT256 - value *)
+        generalize (Hreq1_impl H); clear Hreq1_impl; intros Hreq1_impl.
+        apply (Decidable.not_and _ _ (Nat.le_decidable _ _)) in Hreq1_impl.
+        assert (Himpl: (_value <= st_allowed st (_from, m_sender msg))%nat ->
+                       ~ (st_allowed st (_from, m_sender msg) < MAX_UINT256)%nat).
+        {
+          apply Decidable.or_not_l_iff_1.
+          - apply Nat.le_decidable.
+          - auto.
+        }
+        clear Hreq1_impl; rename Himpl into Hreq1_impl.
+
+        generalize (Hreq2_impl H); clear Hreq2_impl; intros Hreq2_impl.
+        apply (Decidable.not_and _ _ (Nat.le_decidable _ _)) in Hreq2_impl.
+        assert(Himpl: (_value <= st_allowed st (_from, m_sender msg))%nat ->
+                      st_allowed st (_from, m_sender msg) <> MAX_UINT256).
+        {
+          apply Decidable.or_not_l_iff_1.
+          - apply Nat.le_decidable.
+          - auto.
+        }
+        clear Hreq2_impl; rename Himpl into Hreq2_impl.
+
+        generalize (nat_nooverflow_dsl_nooverflow _ _ env msg Hfunc H); intros Hcond.
+        unfold dsl_allowed_access in Hexec.
+        rewrite Hcond in Hexec; simpl in Hexec; clear Hcond.
+
+        rewrite (from_immutable _ _ _) in Hexec.
+        rewrite (value_immutable _ _ _) in Hexec.
+
+        destruct (le_dec _value (st_allowed st (_from, m_sender msg))).
+        * (* allowed[from][msg.sender] >= value *)
+          generalize (Hreq1_impl l0); clear Hreq1_impl; intros Hreq1_impl.
+          generalize (Hreq2_impl l0); clear Hreq2_impl; intros Hreq2_impl.
+
+          apply not_lt in Hreq1_impl.
+          apply Nat.lt_gt_cases in Hreq2_impl.
+          destruct Hreq2_impl.
+          {
+            unfold ">="%nat in Hreq1_impl. auto.
+            apply (Nat.lt_le_trans _ _ _ H0) in Hreq1_impl.
+            apply Nat.lt_irrefl in Hreq1_impl.
+            inversion Hreq1_impl.
+          }
+          {
+            generalize (Hallwd_inv _from (m_sender msg)).
+            intros Hle.
+            apply (Nat.le_lt_trans _ _ _ Hle) in H0.
+            apply Nat.lt_irrefl in H0.
+            inversion H0.
+          }
+
+        * (* allowed[from][msg.sender] < value *)
+          apply not_le in n.
+          apply Nat.ltb_lt in n.
+          rewrite n in Hexec; simpl in Hexec.
+
+          rewrite <- Hexec.
+          split; auto.
+
+      + (* from <> to /\ balances[to] >= MAX_UINT256 + value *)
+        apply (transferFrom_cond_impl st env msg Hfunc) in H.
+        rewrite H in Hexec; simpl in Hexec.
+
+        rewrite <- Hexec.
+        split; auto.
+
+    - (* balances[from] < value *)
+      apply Nat.leb_nle in n.
+
+      simpl in Hexec.
+      unfold ">="%dsl, dsl_balances_access in Hexec.
+      rewrite (Nat.ltb_antisym _ _) in Hexec.
+      rewrite (from_immutable _ _ _) in Hexec.
+      rewrite (value_immutable _ _ _) in Hexec.
+      rewrite n in Hexec; simpl in Hexec.
+
+      rewrite <- Hexec.
+      split; auto.
+  Qed.
+
   Close Scope dsl_scope.
 End dsl_transfer_from.
 
@@ -573,6 +775,40 @@ Section dsl_transfer.
       apply Nat.leb_le in Hle. exact Hle.
   Qed.
 
+  Lemma transfer_cond_impl:
+    forall st env msg,
+      m_func msg = mc_transfer _to _value ->
+      m_sender msg <> _to /\
+      ~ (m_sender msg <> _to /\ (st_balances st _to <= MAX_UINT256 - _value)%nat) ->
+      (((fun (_ : state) (_ : Model.env) (msg : message) => m_sender msg) == to)
+       || ((fun (st : state) (env : Model.env) (msg : message) =>
+              st_balances st (to st env msg)) <= max_uint256 - value)) st env msg = ofalse.
+  Proof.
+    intros st env msg Hfunc Hcond.
+
+    apply transfer_value_inrange in Hfunc.
+    destruct Hfunc as [_ Hvalue].
+
+    unfold "=="%dsl, "||"%dsl, "||"%bool, "<="%dsl, "-"%dsl.
+    rewrite (value_immutable _ _ _).
+    rewrite (to_immutable _ _ _).
+    rewrite (max_uint256_immutable _ _ _).
+    rewrite (minus_safe _ _ Hvalue).
+
+    destruct Hcond as [Hneq Heq].
+    apply Nat.eqb_neq in Hneq; rewrite Hneq; simpl.
+
+    apply (Decidable.not_and _ _ (neq_decidable _ _)) in Heq.
+    destruct Heq.
+
+    - apply Nat.eqb_neq in Hneq.
+      apply H in Hneq; inversion Hneq.
+
+    - apply not_le in H.
+      apply Nat.leb_gt.
+      auto.
+  Qed.
+
   (* Manually proved *)
   Lemma transfer_dsl_sat_spec:
     dsl_sat_spec (mc_transfer _to _value)
@@ -602,6 +838,64 @@ Section dsl_transfer.
     repeat rewrite (value_immutable _ _ _).
     repeat rewrite (to_immutable _ _ _).
     repeat (split; auto).
+  Qed.
+
+  (* If no require can be satisfied, transfer() must revert to the initial state *)
+  Lemma transfer_dsl_revert:
+    forall st env msg this,
+      m_func msg = mc_transfer _to _value ->
+      ~ spec_require (funcspec_transfer _to _value this env msg) st ->
+      forall st0 result,
+        dsl_exec transfer_dsl st0 st env msg this nil = result ->
+        result = Stop st0 (ev_revert this :: nil).
+  Proof.
+    intros st env msg this Hfunc Hreq_neg st0 result Hexec.
+
+    simpl in Hreq_neg.
+
+    assert (Hreq_impl:
+              (_value <= st_balances st (m_sender msg))%nat ->
+              ~(m_sender msg = _to \/
+                m_sender msg <> _to /\ (st_balances st _to <= MAX_UINT256 - _value)%nat)).
+    {
+      apply (Decidable.or_not_l_iff_1 _ _ (Nat.le_decidable _ _)).
+      apply (Decidable.not_and _ _ (Nat.le_decidable _ _)) in Hreq_neg.
+      auto.
+    }
+    clear Hreq_neg.
+
+    simpl in Hexec.
+    destruct (le_dec _value (st_balances st (m_sender msg))).
+    - (* balances[msg.sender] >= value *)
+      generalize (Hreq_impl l); clear Hreq_impl; intros Hreq.
+      apply Decidable.not_or in Hreq.
+
+      apply Nat.leb_le in l.
+
+      simpl in Hexec.
+      unfold ">="%dsl, dsl_balances_access in Hexec.
+      rewrite (value_immutable _ _ _) in Hexec.
+      rewrite (Nat.ltb_antisym _ _) in Hexec.
+      rewrite l in Hexec; simpl in Hexec.
+
+      apply (transfer_cond_impl st env msg Hfunc) in Hreq.
+      rewrite Hreq in Hexec; clear Hreq; simpl in Hexec.
+
+      rewrite <- Hexec.
+      split; auto.
+
+    - (* balances[msg.sender] < value *)
+      apply not_le in n.
+      apply Nat.leb_gt in n.
+
+      simpl in Hexec.
+      unfold ">="%dsl, dsl_balances_access in Hexec.
+      rewrite (value_immutable _ _ _) in Hexec.
+      rewrite (Nat.ltb_antisym _ _) in Hexec.
+      rewrite n in Hexec; simpl in Hexec.
+
+      rewrite <- Hexec.
+      split; auto.
   Qed.
 
   Close Scope dsl_scope.
@@ -636,6 +930,21 @@ Section dsl_balanceOf.
     unfold dsl_balances_access.
     rewrite (owner_immutable _ _ _).
     repeat (split; auto).
+  Qed.
+
+  (* If no require can be satisfied, balanceOf() must revert to the initial state *)
+  Lemma balanceOf_dsl_revert:
+    forall st env msg this,
+      m_func msg = mc_balanceOf _owner ->
+      ~ spec_require (funcspec_balanceOf _owner this env msg) st ->
+      forall st0 result,
+        dsl_exec balanceOf_dsl st0 st env msg this nil = result ->
+        result = Stop st0 (ev_revert this :: nil).
+  Proof.
+    intros st env msg this _ Hreq_neg st0 result Hexec.
+    simpl in Hreq_neg.
+    apply (proj1 Decidable.not_true_iff) in Hreq_neg.
+    inversion Hreq_neg.
   Qed.
 
   Close Scope dsl_scope.
@@ -679,6 +988,21 @@ Section dsl_approve.
     repeat (split; auto).
   Qed.
 
+  (* If no require can be satisfied, approve() must revert to the initial state *)
+  Lemma approve_dsl_revert:
+    forall st env msg this,
+      m_func msg = mc_approve _spender _value ->
+      ~ spec_require (funcspec_approve _spender _value this env msg) st ->
+      forall st0 result,
+        dsl_exec approve_dsl st0 st env msg this nil = result ->
+        result = Stop st0 (ev_revert this :: nil).
+  Proof.
+    intros st env msg this _ Hreq_neg st0 result Hexec.
+    simpl in Hreq_neg.
+    apply (proj1 Decidable.not_true_iff) in Hreq_neg.
+    inversion Hreq_neg.
+  Qed.
+
   Close Scope dsl_scope.
 End dsl_approve.
 
@@ -715,6 +1039,21 @@ Section dsl_allowance.
     rewrite (owner_immutable _ _ _).
     rewrite (spender_immutable _ _ _).
     repeat (split; auto).
+  Qed.
+
+  (* If no require can be satisfied, allowance() must revert to the initial state *)
+  Lemma allowance_dsl_revert:
+    forall st env msg this,
+      m_func msg = mc_allowance _owner _spender ->
+      ~ spec_require (funcspec_allowance _owner _spender this env msg) st ->
+      forall st0 result,
+        dsl_exec allowance_dsl st0 st env msg this nil = result ->
+        result = Stop st0 (ev_revert this :: nil).
+  Proof.
+    intros st env msg this _ Hreq_neg st0 result Hexec.
+    simpl in Hreq_neg.
+    apply (proj1 Decidable.not_true_iff) in Hreq_neg.
+    inversion Hreq_neg.
   Qed.
 
   Close Scope dsl_scope.
