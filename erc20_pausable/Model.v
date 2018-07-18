@@ -83,3 +83,29 @@ Inductive mcall : Type :=
 (* Message, with a simplication that args are embedded in `m_func`,
    instead of calldata *)
 Definition message := TMessage mcall.
+
+(* Assume parameters of message calls are in valid ranges. *)
+
+Axiom ctor_totalSupply_inrange:
+  forall ia name dec sym msg,
+    msg = mc_PausableToken ia name dec sym -> 0 <= ia /\ ia <= MAX_UINT256.
+
+Axiom transfer_value_inrange:
+  forall to v msg,
+    msg = mc_transfer to v -> 0 <= v /\ v <= MAX_UINT256.
+
+Axiom transferFrom_value_inrange:
+  forall from to v msg,
+    msg = mc_transferFrom from to v -> 0 <= v /\ v <= MAX_UINT256.
+
+Axiom approve_value_inrange:
+  forall spender v msg,
+    msg = mc_approve spender v -> 0 <= v /\ v <= MAX_UINT256.
+
+Axiom increaseApproval_value_inrange:
+  forall spender v msg,
+    msg = mc_increaseApproval spender v -> 0 <= v /\ v <= MAX_UINT256.
+
+Axiom decreaseApproval_value_inrange:
+  forall spender v msg,
+    msg = mc_decreaseApproval spender v -> 0 <= v /\ v <= MAX_UINT256.
