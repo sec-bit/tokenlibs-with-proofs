@@ -1055,3 +1055,224 @@ Proof.
   substH Hc with (create_INV _ _ C E Hc Hs).
   eapply steps_INV; eauto.
 Qed.
+
+(* Prop #2: only owner can pause the contract *)
+Theorem Property_pause_only_by_owner:
+  forall msg,
+    m_func msg = mc_pause ->
+    forall env C C' evts,
+      step env C msg C' evts ->
+      m_sender msg = st_owner (w_st C).
+Proof.
+  intros msg Hmsg env C C' evts Hstep.
+
+  inversion Hstep;
+    try (subst msg; simpl in Hmsg; inversion Hmsg).
+
+  subst; simpl in *.
+  destruct H5 as [[_ Howner] _]; auto.
+Qed.
+
+(* Prop #3: only owner can unpause the contract *)
+Theorem Property_unpause_only_by_owner:
+  forall msg,
+    m_func msg = mc_unpause ->
+    forall env C C' evts,
+      step env C msg C' evts ->
+      m_sender msg = st_owner (w_st C).
+Proof.
+  intros msg Hmsg env C C' evts Hstep.
+
+  inversion Hstep;
+    try (subst msg; simpl in Hmsg; inversion Hmsg).
+
+  subst; simpl in *.
+  destruct H5 as [[_ Howner] _]; auto.
+Qed.
+
+(* Prop #4: owner cannot transfer tokens in arbitrary account by transfer() *)
+Theorem Property_restricted_owner_for_transfer:
+  forall msg to v,
+    m_func msg = mc_transfer to v ->
+    forall env C C' evts,
+      step env C msg C' evts ->
+      m_sender msg = st_owner (w_st C) ->
+      forall acct,
+        acct <> st_owner (w_st C) /\ acct <> to ->
+        st_balances (w_st C) acct = st_balances (w_st C') acct.
+Proof.
+  intros msg to v Hfunc env C C' evts Hstep Hsender acct Hacct.
+
+  destruct Hacct as [Hacct_owner Hacct_to].
+
+  inversion Hstep;
+    try (subst msg; simpl in Hfunc; inversion Hfunc).
+
+  subst; simpl in *.
+  destruct H5 as [_ [_ [_ [_ [_ [_ [_ [Hbalances _]]]]]]]].
+  rewrite Hbalances.
+
+  unfold a2v_upd_dec, a2v_upd_inc.
+
+  subst sender.
+  apply neq_beq_false in Hacct_owner.
+  apply neq_beq_false in Hacct_to.
+  rewrite (tmap_get_upd_ne _ _ _ _ (beq_sym _ _ Hacct_to)).
+  rewrite (tmap_get_upd_ne _ _ _ _ (beq_sym _ _ Hacct_owner)).
+  reflexivity.
+Qed.
+
+(* Prop #5: owner cannot transfer tokens in arbitrary account by transferFrom() *)
+Theorem Property_restricted_owner_for_transferFrom:
+  forall msg from to v,
+    m_func msg = mc_transferFrom from to v ->
+    forall env C C' evts,
+      step env C msg C' evts ->
+      m_sender msg = st_owner (w_st C) ->
+      forall acct,
+        acct <> from /\ acct <> to ->
+        st_balances (w_st C) acct = st_balances (w_st C') acct.
+Proof.
+  intros msg from to v Hfunc env C C' evts Hstep Hsender acct Hacct.
+
+  destruct Hacct as [Hacct_from Hacct_to].
+
+  inversion Hstep;
+    try (subst msg; simpl in Hfunc; inversion Hfunc).
+
+  - subst; simpl in *.
+
+    destruct H2 as [_ [_ [_ [_ [_ [_ [_ [_ [Hbalances _]]]]]]]]].
+
+    rewrite Hbalances.
+    unfold a2v_upd_dec, a2v_upd_inc.
+
+    subst sender.
+    apply neq_beq_false in Hacct_from.
+    apply neq_beq_false in Hacct_to.
+    rewrite (tmap_get_upd_ne _ _ _ _ (beq_sym _ _ Hacct_to)).
+    rewrite (tmap_get_upd_ne _ _ _ _ (beq_sym _ _ Hacct_from)).
+    reflexivity.
+
+  - subst; simpl in *;
+
+    destruct H2 as [_ [_ [_ [_ [_ [_ [_ [_ [Hbalances _]]]]]]]]];
+
+    rewrite Hbalances;
+    unfold a2v_upd_dec, a2v_upd_inc;
+
+    subst sender;
+    apply neq_beq_false in Hacct_from;
+    apply neq_beq_false in Hacct_to;
+    rewrite (tmap_get_upd_ne _ _ _ _ (beq_sym _ _ Hacct_to));
+    rewrite (tmap_get_upd_ne _ _ _ _ (beq_sym _ _ Hacct_from));
+    reflexivity.
+Qed.
+
+(* Prop #6: owner cannot approve transfers from arbitrary accounts by approve() *)
+Theorem Property_restricted_owner_for_approve:
+  forall msg _spender _value,
+    m_func msg = mc_approve _spender _value ->
+    forall env C C' evts,
+      step env C msg C' evts ->
+      m_sender msg = st_owner (w_st C) ->
+      forall acct,
+        acct <> st_owner (w_st C) ->
+        forall spender,
+          st_allowed (w_st C) (acct, spender) = st_allowed (w_st C') (acct, spender).
+Proof.
+  intros msg _spender _value Hfunc env C C' evts Hstep Hsender acct Hacct spender.
+
+  inversion Hstep;
+    try (subst msg; simpl in Hfunc; inversion Hfunc).
+
+  subst; simpl in *.
+  destruct H2 as [_ [_ [_ [_ [_ [_ [_ [_ [_ Hallowed]]]]]]]]].
+  rewrite Hallowed.
+  rewrite <- Hsender in Hacct.
+
+  assert (Hneq: beq (sender, _spender) (acct, spender) = false).
+  {
+    apply neq_beq_false.
+    intros Heq. inversion Heq.
+    apply Hacct; auto.
+  }
+
+  unfold aa2v_upd_2.
+  rewrite (tmap_get_upd_ne (st_allowed (w_st C)) _ _ _value Hneq).
+  reflexivity.
+Qed.
+
+(* Prop #7: owner cannot approve transfers of arbitrary accounts by increaseApproval() *)
+Theorem Property_restricted_owner_for_increaseApproval:
+  forall msg _spender _value,
+    m_func msg = mc_increaseApproval _spender _value ->
+    forall env C C' evts,
+      step env C msg C' evts ->
+      m_sender msg = st_owner (w_st C) ->
+      forall acct,
+        acct <> st_owner (w_st C) ->
+        forall spender,
+          st_allowed (w_st C) (acct, spender) = st_allowed (w_st C') (acct, spender).
+Proof.
+  intros msg _spender _value Hfunc env C C' evts Hstep Hsender acct Hacct spender.
+
+  inversion Hstep;
+    try (subst msg; simpl in Hfunc; inversion Hfunc).
+
+  subst; simpl in *.
+  destruct H5 as [_ [_ [_ [_ [_ [_ [_ [Hallowed _]]]]]]]].
+  rewrite Hallowed.
+  rewrite <- Hsender in Hacct.
+
+  assert (Hneq: beq (sender, _spender) (acct, spender) = false).
+  {
+    apply neq_beq_false.
+    intros Heq. inversion Heq.
+    apply Hacct; auto.
+  }
+
+  unfold aa2v_upd_inc.
+  rewrite (tmap_get_upd_ne _ _ _ _ Hneq).
+  reflexivity.
+Qed.
+
+(* Prop #8: owner cannot approve transfers of arbitrary accounts by decreaseApproval() *)
+Theorem Property_restricted_owner_for_decreaseApproval:
+  forall msg _spender _value,
+    m_func msg = mc_decreaseApproval _spender _value ->
+    forall env C C' evts,
+      step env C msg C' evts ->
+      m_sender msg = st_owner (w_st C) ->
+      forall acct,
+        acct <> st_owner (w_st C) ->
+        forall spender,
+          st_allowed (w_st C) (acct, spender) = st_allowed (w_st C') (acct, spender).
+Proof.
+  intros msg _spender _value Hfunc env C C' evts Hstep Hsender acct Hacct spender.
+
+  rewrite <- Hsender in Hacct.
+  assert (Hneq: beq (m_sender msg, _spender) (acct, spender) = false).
+  {
+    apply neq_beq_false.
+    intros Heq. inversion Heq.
+    apply Hacct; auto.
+  }
+
+  inversion Hstep;
+    try (subst msg; simpl in Hfunc; inversion Hfunc).
+
+  - subst; simpl in *.
+    destruct H5 as [_ [_ [_ [_ [_ [_ [_ [Hallowed _]]]]]]]].
+    rewrite Hallowed.
+    unfold aa2v_upd_2.
+    rewrite (tmap_get_upd_ne _ _ _ _ Hneq).
+    reflexivity.
+
+  - subst; simpl in *.
+    destruct H5 as [_ [_ [_ [_ [_ [_ [_ [Hallowed _]]]]]]]].
+    rewrite Hallowed.
+    unfold aa2v_upd_dec.
+    rewrite (tmap_get_upd_ne _ _ _ _ Hneq).
+    reflexivity.
+Qed.
