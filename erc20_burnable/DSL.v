@@ -362,6 +362,17 @@ Notation "'@string' x = expr ; stmt" :=
 
 Require Import Spec.
 
+Definition dsl_sat_spec (fcall: mcall)
+                        (fdsl: Stmt)
+                        (fspec: address -> env -> message -> Spec) : Prop :=
+  forall st env msg this,
+    m_func msg = fcall
+    -> spec_require (fspec this env msg) st
+    -> forall st0 result,
+      dsl_exec fdsl st0 st env msg this nil = result
+      -> spec_trans (fspec this env msg) st (ret_st result)
+         /\ spec_events (fspec this env msg) (ret_st result) (ret_evts result).
+
 Section dsl_transfer_from.
   Open Scope dsl_scope.
 
@@ -379,7 +390,6 @@ Section dsl_transfer_from.
   Context `{from_immutable: forall st env msg, from st env msg = _from}.
   Context `{to_immutable: forall st env msg, to st env msg = _to}.
   Context `{value_immutable: forall st env msg, value st env msg = _value}.
-  Context `{value_in_range: (_value >= 0 /\ _value <= MAX_UINT256)%nat}.
   Context `{max_uint256_immutable: forall st env msg, max_uint256 st env msg = MAX_UINT256}.
 
   (* DSL representation of transferFrom(), generated from solidity *)
@@ -401,11 +411,15 @@ Section dsl_transfer_from.
   (* Auxiliary lemmas *)
   Lemma nat_nooverflow_dsl_nooverflow:
     forall (m: state -> a2v) st env msg,
+      m_func msg = mc_transferFrom _from _to _value ->
       (_from = _to \/ (_from <> _to /\ (m st _to <= MAX_UINT256 - _value)))%nat ->
       ((from == to) ||
        ((fun st env msg => m st (to st env msg)) <= max_uint256 - value))%dsl st env msg = otrue.
   Proof.
-    intros m st env msg Hnat.
+    intros m st env msg Hmcall Hnat.
+
+    apply transferFrom_value_inrange in Hmcall.
+    destruct Hmcall as [_ Hvalue].
 
     unfold "=="%dsl, "<="%dsl, "||"%dsl, "||"%bool, "-"%dsl.
     rewrite (from_immutable st env msg),
@@ -416,29 +430,72 @@ Section dsl_transfer_from.
     - rewrite H. rewrite (Nat.eqb_refl _). reflexivity.
     - destruct H as [Hneq Hle].
       apply Nat.eqb_neq in Hneq. rewrite Hneq.
-      apply Nat.leb_le in Hle.
-      destruct value_in_range as [_ Hvalue].
-      assert (Hlo: (MAX_UINT256 >= _value)%nat);
-        auto.
-      rewrite (minus_safe _ _ Hlo).
-      exact Hle.
+      apply Nat.leb_le.
+      rewrite (minus_safe _ _ Hvalue); auto.
+  Qed.
+
+  Lemma transferFrom_cond_dec:
+    forall st,
+      Decidable.decidable
+        (_from = _to \/ _from <> _to /\ (st_balances st _to <= MAX_UINT256 - _value)%nat).
+  Proof.
+    intros.
+    apply Decidable.dec_or.
+    - apply Nat.eq_decidable.
+    - apply Decidable.dec_and.
+      + apply neq_decidable.
+      + apply Nat.le_decidable.
+  Qed.
+
+  Lemma transferFrom_cond_impl:
+    forall st env msg,
+      m_func msg = mc_transferFrom _from _to _value ->
+      ~ (_from = _to \/ _from <> _to /\ (st_balances st _to <= MAX_UINT256 - _value)%nat) ->
+      (((from == to)
+        || ((fun (st : state) (env : Model.env) (msg : message) =>
+               st_balances st (to st env msg)) <= max_uint256 - value)) st env msg) = ofalse.
+  Proof.
+    intros st env msg Hfunc Hneg.
+
+    apply transferFrom_value_inrange in Hfunc.
+    destruct Hfunc as [_ Hvalue].
+
+    unfold "=="%dsl, "||"%dsl, "||"%bool, "<="%dsl, "-"%dsl.
+    rewrite (from_immutable _ _ _).
+    rewrite (to_immutable _ _ _).
+    rewrite (value_immutable _ _ _).
+    rewrite (max_uint256_immutable _ _ _).
+
+    apply (Decidable.not_or _ _) in Hneg.
+    destruct Hneg as [Hneq Hneg].
+
+    apply Nat.eqb_neq in Hneq.
+    rewrite Hneq; simpl.
+
+    assert (Hvalue': (MAX_UINT256 >= _value)%nat);
+      auto.
+    rewrite (minus_safe _ _ Hvalue').
+
+    apply (Decidable.not_and _ _ (neq_decidable _ _)) in Hneg.
+    destruct Hneg.
+    - apply Nat.eqb_neq in Hneq. apply H in Hneq. inversion Hneq.
+    - apply not_le in H.
+      apply Nat.leb_gt.
+      auto.
   Qed.
 
   (* Manually proved *)
   Lemma transferFrom_dsl_sat_spec_1:
-    forall st env msg this,
-      spec_require (funcspec_transferFrom_1 _from _to _value this env msg) st ->
-      forall st0 result,
-        dsl_exec transferFrom_dsl st0 st env msg this nil = result ->
-        spec_trans (funcspec_transferFrom_1 _from _to _value this env msg) st (ret_st result) /\
-        spec_events (funcspec_transferFrom_1 _from _to _value this env msg) (ret_st result) (ret_evts result).
+    dsl_sat_spec (mc_transferFrom _from _to _value)
+                 transferFrom_dsl
+                 (funcspec_transferFrom_1 _from _to _value).
   Proof.
-    intros st env msg this Hreq st0 result Hexec.
+    intros st env msg this Hfunc Hreq st0 result Hexec.
 
     simpl in Hreq.
     destruct Hreq as [Hreq_blncs_lo [Hreq_blncs_hi [Hreq_allwd_lo Hreq_allwd_hi]]].
     apply Nat.leb_le in Hreq_blncs_lo.
-    generalize (nat_nooverflow_dsl_nooverflow _ st env msg Hreq_blncs_hi).
+    generalize (nat_nooverflow_dsl_nooverflow _ st env msg Hfunc Hreq_blncs_hi).
     clear Hreq_blncs_hi. intros Hreq_blncs_hi.
     apply Nat.leb_le in Hreq_allwd_lo.
     apply Nat.ltb_lt in Hreq_allwd_hi.
@@ -477,17 +534,14 @@ Section dsl_transfer_from.
   Qed.
 
   Lemma transferFrom_dsl_sat_spec_2:
-    forall st env msg this,
-      spec_require (funcspec_transferFrom_2 _from _to _value this env msg) st ->
-      forall st0 result,
-        dsl_exec transferFrom_dsl st0 st env msg this nil = result ->
-        spec_trans (funcspec_transferFrom_2 _from _to _value this env msg) st (ret_st result) /\
-        spec_events (funcspec_transferFrom_2 _from _to _value this env msg) (ret_st result) (ret_evts result).
+    dsl_sat_spec (mc_transferFrom _from _to _value)
+                 transferFrom_dsl
+                 (funcspec_transferFrom_2 _from _to _value).
   Proof.
-    intros st env msg this Hreq st0 result Hexec.
+    intros st env msg this Hfunc Hreq st0 result Hexec.
 
     simpl in Hreq. destruct Hreq as [Hreq_blncs_lo [Hreq_blncs_hi [Hreq_allwd_lo Hreq_allwd_hi]]].
-    generalize (nat_nooverflow_dsl_nooverflow _ st env msg Hreq_blncs_hi).
+    generalize (nat_nooverflow_dsl_nooverflow _ st env msg Hfunc Hreq_blncs_hi).
     clear Hreq_blncs_hi. intros Hreq_blncs_hi.
     apply Nat.leb_le in Hreq_blncs_lo.
     apply Nat.leb_le in Hreq_allwd_lo.
@@ -526,56 +580,10 @@ Section dsl_transfer_from.
     repeat (split; auto).
   Qed.
 
-  Lemma transferFrom_cond_dec:
-    forall st,
-      Decidable.decidable
-        (_from = _to \/ _from <> _to /\ (st_balances st _to <= MAX_UINT256 - _value)%nat).
-  Proof.
-    intros.
-    apply Decidable.dec_or.
-    - apply Nat.eq_decidable.
-    - apply Decidable.dec_and.
-      + apply neq_decidable.
-      + apply Nat.le_decidable.
-  Qed.
-
-  Lemma transferFrom_cond_impl:
-    forall st env msg,
-      ~ (_from = _to \/ _from <> _to /\ (st_balances st _to <= MAX_UINT256 - _value)%nat) ->
-      (((from == to)
-        || ((fun (st : state) (env : Model.env) (msg : message) =>
-               st_balances st (to st env msg)) <= max_uint256 - value)) st env msg) = ofalse.
-  Proof.
-    intros st env msg Hneg.
-
-    unfold "=="%dsl, "||"%dsl, "||"%bool, "<="%dsl, "-"%dsl.
-    rewrite (from_immutable _ _ _).
-    rewrite (to_immutable _ _ _).
-    rewrite (value_immutable _ _ _).
-    rewrite (max_uint256_immutable _ _ _).
-
-    apply (Decidable.not_or _ _) in Hneg.
-    destruct Hneg as [Hneq Hneg].
-
-    apply Nat.eqb_neq in Hneq.
-    rewrite Hneq; simpl.
-
-    destruct value_in_range as [_ Hvalue].
-    assert (Hvalue': (MAX_UINT256 >= _value)%nat);
-      auto.
-    rewrite (minus_safe _ _ Hvalue').
-
-    apply (Decidable.not_and _ _ (neq_decidable _ _)) in Hneg.
-    destruct Hneg.
-    - apply Nat.eqb_neq in Hneq. apply H in Hneq. inversion Hneq.
-    - apply not_le in H.
-      apply Nat.leb_gt.
-      auto.
-  Qed.
-
   (* If no require can be satisfied, transferFrom() must revert to the initial state *)
   Lemma transferFrom_dsl_revert:
     forall st env msg this,
+      m_func msg = mc_transferFrom _from _to _value ->
       ~ spec_require (funcspec_transferFrom_1 _from _to _value this env msg) st ->
       ~ spec_require (funcspec_transferFrom_2 _from _to _value this env msg) st ->
       (forall addr0 addr1, (st_allowed st (addr0, addr1) <= MAX_UINT256)%nat) ->
@@ -584,7 +592,7 @@ Section dsl_transfer_from.
         result = Stop st0 (ev_revert this :: nil).
   Proof.
     unfold funcspec_transferFrom_1, funcspec_transferFrom_2, ">="%nat.
-    intros st env msg this Hreq1_neg Hreq2_neg Hallwd_inv st0 result Hexec;
+    intros st env msg this Hfunc Hreq1_neg Hreq2_neg Hallwd_inv st0 result Hexec;
       simpl in Hreq1_neg, Hreq2_neg.
 
     assert (Hreq1_impl:
@@ -666,7 +674,7 @@ Section dsl_transfer_from.
         }
         clear Hreq2_impl; rename Himpl into Hreq2_impl.
 
-        generalize (nat_nooverflow_dsl_nooverflow _ _ env msg H); intros Hcond.
+        generalize (nat_nooverflow_dsl_nooverflow _ _ env msg Hfunc H); intros Hcond.
         unfold dsl_allowed_access in Hexec.
         rewrite Hcond in Hexec; simpl in Hexec; clear Hcond.
 
@@ -704,7 +712,7 @@ Section dsl_transfer_from.
           split; auto.
 
       + (* from <> to /\ balances[to] >= MAX_UINT256 + value *)
-        apply (transferFrom_cond_impl st env msg) in H.
+        apply (transferFrom_cond_impl st env msg Hfunc) in H.
         rewrite H in Hexec; simpl in Hexec.
 
         rewrite <- Hexec.
@@ -740,7 +748,6 @@ Section dsl_transfer.
   (* Arguments are immutable, generated from solidity *)
   Context `{to_immutable: forall st env msg, to st env msg = _to}.
   Context `{value_immutable: forall st env msg, value st env msg = _value}.
-  Context `{value_in_range: (_value >= 0 /\ _value <= MAX_UINT256)%nat}.
   Context `{max_uint256_immutable: forall st env msg, max_uint256 st env msg = MAX_UINT256}.
 
   (* DSL representation of transfer(), generated from solidity *)
@@ -756,11 +763,15 @@ Section dsl_transfer.
   (* Auxiliary lemmas *)
   Lemma nat_nooverflow_dsl_nooverflow':
     forall (m: state -> a2v) st env msg,
+      m_func msg = mc_transfer _to _value ->
       (m_sender msg = _to \/ (m_sender msg <> _to /\ (m st _to <= MAX_UINT256 - _value)))%nat ->
       ((msg.sender == to) ||
        ((fun st env msg => m st (to st env msg)) <= max_uint256 - value))%dsl st env msg = otrue.
   Proof.
-    intros m st env msg Hnat.
+    intros m st env msg Hfunc Hnat.
+
+    apply transfer_value_inrange in Hfunc.
+    destruct Hfunc as [_ Hvalue].
 
     unfold "||"%dsl, "||"%bool, "=="%dsl, "<="%dsl, "-"%dsl.
     rewrite (to_immutable st env msg),
@@ -770,28 +781,58 @@ Section dsl_transfer.
     - rewrite H. rewrite (Nat.eqb_refl _). reflexivity.
     - destruct H as [Hneq Hle].
       apply Nat.eqb_neq in Hneq. rewrite Hneq.
-      destruct value_in_range as [_ Hvalue].
       assert (Hlo: (MAX_UINT256 >= _value)%nat);
         auto.
       rewrite (minus_safe _ _ Hlo).
       apply Nat.leb_le in Hle. exact Hle.
   Qed.
 
+  Lemma transfer_cond_impl:
+    forall st env msg,
+      m_func msg = mc_transfer _to _value ->
+      m_sender msg <> _to /\
+      ~ (m_sender msg <> _to /\ (st_balances st _to <= MAX_UINT256 - _value)%nat) ->
+      (((fun (_ : state) (_ : Model.env) (msg : message) => m_sender msg) == to)
+       || ((fun (st : state) (env : Model.env) (msg : message) =>
+              st_balances st (to st env msg)) <= max_uint256 - value)) st env msg = ofalse.
+  Proof.
+    intros st env msg Hfunc Hcond.
+
+    apply transfer_value_inrange in Hfunc.
+    destruct Hfunc as [_ Hvalue].
+
+    unfold "=="%dsl, "||"%dsl, "||"%bool, "<="%dsl, "-"%dsl.
+    rewrite (value_immutable _ _ _).
+    rewrite (to_immutable _ _ _).
+    rewrite (max_uint256_immutable _ _ _).
+    rewrite (minus_safe _ _ Hvalue).
+
+    destruct Hcond as [Hneq Heq].
+    apply Nat.eqb_neq in Hneq; rewrite Hneq; simpl.
+
+    apply (Decidable.not_and _ _ (neq_decidable _ _)) in Heq.
+    destruct Heq.
+
+    - apply Nat.eqb_neq in Hneq.
+      apply H in Hneq; inversion Hneq.
+
+    - apply not_le in H.
+      apply Nat.leb_gt.
+      auto.
+  Qed.
+
   (* Manually proved *)
   Lemma transfer_dsl_sat_spec:
-    forall st env msg this,
-      spec_require (funcspec_transfer _to _value this env msg) st ->
-      forall st0 result,
-        dsl_exec transfer_dsl st0 st env msg this nil = result ->
-        spec_trans (funcspec_transfer _to _value this env msg) st (ret_st result) /\
-        spec_events (funcspec_transfer _to _value this env msg) (ret_st result) (ret_evts result).
+    dsl_sat_spec (mc_transfer _to _value)
+                 transfer_dsl
+                 (funcspec_transfer _to _value).
   Proof.
-    intros st env msg this Hreq st0 result Hexec.
+    intros st env msg this Hfunc Hreq st0 result Hexec.
 
     unfold funcspec_transfer in Hreq; simpl in Hreq.
     destruct Hreq as [Hreq_blncs_lo Hreq_blncs_hi].
     unfold ">="%nat in Hreq_blncs_lo. apply Nat.leb_le in Hreq_blncs_lo.
-    generalize(nat_nooverflow_dsl_nooverflow' _ st env msg Hreq_blncs_hi).
+    generalize(nat_nooverflow_dsl_nooverflow' _ st env msg Hfunc Hreq_blncs_hi).
     clear Hreq_blncs_hi. intros Hreq_blncs_hi.
 
     unfold transfer_dsl in Hexec; simpl in Hexec.
@@ -810,46 +851,16 @@ Section dsl_transfer.
     repeat (split; auto).
   Qed.
 
-  Lemma transfer_cond_impl:
-    forall st env msg,
-      m_sender msg <> _to /\
-      ~ (m_sender msg <> _to /\ (st_balances st _to <= MAX_UINT256 - _value)%nat) ->
-      (((fun (_ : state) (_ : Model.env) (msg : message) => m_sender msg) == to)
-       || ((fun (st : state) (env : Model.env) (msg : message) =>
-              st_balances st (to st env msg)) <= max_uint256 - value)) st env msg = ofalse.
-  Proof.
-    intros st env msg Hcond.
-
-    unfold "=="%dsl, "||"%dsl, "||"%bool, "<="%dsl, "-"%dsl.
-    rewrite (value_immutable _ _ _).
-    rewrite (to_immutable _ _ _).
-    rewrite (max_uint256_immutable _ _ _).
-    destruct value_in_range as [_ Hvalue].
-    rewrite (minus_safe _ _ Hvalue).
-
-    destruct Hcond as [Hneq Heq].
-    apply Nat.eqb_neq in Hneq; rewrite Hneq; simpl.
-
-    apply (Decidable.not_and _ _ (neq_decidable _ _)) in Heq.
-    destruct Heq.
-
-    - apply Nat.eqb_neq in Hneq.
-      apply H in Hneq; inversion Hneq.
-
-    - apply not_le in H.
-      apply Nat.leb_gt.
-      auto.
-  Qed.
-
   (* If no require can be satisfied, transfer() must revert to the initial state *)
   Lemma transfer_dsl_revert:
     forall st env msg this,
+      m_func msg = mc_transfer _to _value ->
       ~ spec_require (funcspec_transfer _to _value this env msg) st ->
       forall st0 result,
         dsl_exec transfer_dsl st0 st env msg this nil = result ->
         result = Stop st0 (ev_revert this :: nil).
   Proof.
-    intros st env msg this Hreq_neg st0 result Hexec.
+    intros st env msg this Hfunc Hreq_neg st0 result Hexec.
 
     simpl in Hreq_neg.
     apply (Decidable.not_and _ _ (Nat.le_decidable _ _)) in Hreq_neg.
@@ -875,7 +886,7 @@ Section dsl_transfer.
       rewrite (Nat.ltb_antisym _ _) in Hexec.
       rewrite l in Hexec; simpl in Hexec.
 
-      apply (transfer_cond_impl st env msg)in Hreq.
+      apply (transfer_cond_impl st env msg Hfunc) in Hreq.
       rewrite Hreq in Hexec; clear Hreq; simpl in Hexec.
 
       rewrite <- Hexec.
@@ -914,14 +925,11 @@ Section dsl_balanceOf.
 
   (* Manually proved *)
   Lemma balanceOf_dsl_sat_spec:
-    forall st env msg this,
-      spec_require (funcspec_balanceOf _owner this env msg) st ->
-      forall st0 result,
-        dsl_exec balanceOf_dsl st0 st env msg this nil = result ->
-        spec_trans (funcspec_balanceOf _owner this env msg) st (ret_st result) /\
-        spec_events (funcspec_balanceOf _owner this env msg) (ret_st result) (ret_evts result).
+    dsl_sat_spec (mc_balanceOf _owner)
+                 balanceOf_dsl
+                 (funcspec_balanceOf _owner).
   Proof.
-    intros st env msg this Hreq st0 result Hexec.
+    intros st env msg this Hfunc Hreq st0 result Hexec.
 
     simpl in Hexec.
     unfold funcspec_balanceOf.
@@ -934,12 +942,13 @@ Section dsl_balanceOf.
   (* If no require can be satisfied, balanceOf() must revert to the initial state *)
   Lemma balanceOf_dsl_revert:
     forall st env msg this,
+      m_func msg = mc_balanceOf _owner ->
       ~ spec_require (funcspec_balanceOf _owner this env msg) st ->
       forall st0 result,
         dsl_exec balanceOf_dsl st0 st env msg this nil = result ->
         result = Stop st0 (ev_revert this :: nil).
   Proof.
-    intros st env msg this Hreq_neg st0 result Hexec.
+    intros st env msg this _ Hreq_neg st0 result Hexec.
     simpl in Hreq_neg.
     apply (proj1 Decidable.not_true_iff) in Hreq_neg.
     inversion Hreq_neg.
@@ -970,14 +979,11 @@ Section dsl_approve.
 
   (* Manually proved *)
   Lemma approve_dsl_sat_spec:
-    forall st env msg this,
-      spec_require (funcspec_approve _spender _value this env msg) st ->
-      forall st0 result,
-        dsl_exec approve_dsl st0 st env msg this nil = result ->
-        spec_trans (funcspec_approve _spender _value this env msg) st (ret_st result) /\
-        spec_events (funcspec_approve _spender _value this env msg) (ret_st result) (ret_evts result).
+    dsl_sat_spec (mc_approve _spender _value)
+                 approve_dsl
+                 (funcspec_approve _spender _value).
   Proof.
-    intros st env msg this Hreq st0 result Hexec.
+    intros st env msg this Hfunc Hreq st0 result Hexec.
 
     simpl in Hexec.
     unfold funcspec_approve.
@@ -990,12 +996,13 @@ Section dsl_approve.
   (* If no require can be satisfied, approve() must revert to the initial state *)
   Lemma approve_dsl_revert:
     forall st env msg this,
+      m_func msg = mc_approve _spender _value ->
       ~ spec_require (funcspec_approve _spender _value this env msg) st ->
       forall st0 result,
         dsl_exec approve_dsl st0 st env msg this nil = result ->
         result = Stop st0 (ev_revert this :: nil).
   Proof.
-    intros st env msg this Hreq_neg st0 result Hexec.
+    intros st env msg this Hfunc Hreq_neg st0 result Hexec.
     simpl in Hreq_neg.
     apply (proj1 Decidable.not_true_iff) in Hreq_neg.
     inversion Hreq_neg.
@@ -1023,14 +1030,11 @@ Section dsl_allowance.
 
   (* Manually proved *)
   Lemma allowance_dsl_sat_spec:
-    forall st env msg this,
-      spec_require (funcspec_allowance _owner _spender this env msg) st ->
-      forall st0 result,
-        dsl_exec allowance_dsl st0 st env msg this nil = result ->
-        spec_trans (funcspec_allowance _owner _spender this env msg) st (ret_st result) /\
-        spec_events (funcspec_allowance _owner _spender this env msg) (ret_st result) (ret_evts result).
+    dsl_sat_spec (mc_allowance _owner _spender)
+                 allowance_dsl
+                 (funcspec_allowance _owner _spender).
   Proof.
-    intros st env msg this Hreq st0 result Hexec.
+    intros st env msg this Hfunc Hreq st0 result Hexec.
 
     simpl in Hexec.
     unfold funcspec_allowance.
@@ -1044,12 +1048,13 @@ Section dsl_allowance.
   (* If no require can be satisfied, allowance() must revert to the initial state *)
   Lemma allowance_dsl_revert:
     forall st env msg this,
+      m_func msg = mc_allowance _owner _spender ->
       ~ spec_require (funcspec_allowance _owner _spender this env msg) st ->
       forall st0 result,
         dsl_exec allowance_dsl st0 st env msg this nil = result ->
         result = Stop st0 (ev_revert this :: nil).
   Proof.
-    intros st env msg this Hreq_neg st0 result Hexec.
+    intros st env msg this Hfunc Hreq_neg st0 result Hexec.
     simpl in Hreq_neg.
     apply (proj1 Decidable.not_true_iff) in Hreq_neg.
     inversion Hreq_neg.
@@ -1093,13 +1098,14 @@ Section dsl_constructor.
       st_balances st = $0 ->
       st_allowed st = $0 ->
       forall env msg this,
+        m_func msg = mc_BurnableToken _initialAmount _tokenName _decimalUnits _tokenSymbol ->
         spec_require (funcspec_BurnableToken _initialAmount _tokenName _decimalUnits _tokenSymbol this env msg) st ->
         forall st0 result,
           dsl_exec ctor_dsl st0 st env msg this nil = result ->
           spec_trans (funcspec_BurnableToken _initialAmount _tokenName _decimalUnits _tokenSymbol this env msg) st (ret_st result) /\
           spec_events (funcspec_BurnableToken _initialAmount _tokenName _decimalUnits _tokenSymbol this env msg) (ret_st result) (ret_evts result).
   Proof.
-    intros st Hblns_init Hallwd_init env msg this Hreq st0 result Hexec.
+    intros st Hblns_init Hallwd_init env msg this Hfunc Hreq st0 result Hexec.
 
     simpl in Hexec.
     unfold funcspec_BurnableToken.
@@ -1138,14 +1144,11 @@ Section dsl_burn.
 
   (* Manually proved *)
   Lemma burn_dsl_sat_spec:
-    forall st env msg this,
-      spec_require (funcspec_Burn _value this env msg) st ->
-      forall st0 result,
-        dsl_exec burn_dsl st0 st env msg this nil = result ->
-        spec_trans (funcspec_Burn _value this env msg) st (ret_st result) /\
-        spec_events (funcspec_Burn _value this env msg) (ret_st result) (ret_evts result).
+    dsl_sat_spec (mc_burn _value)
+                 burn_dsl
+                 (funcspec_Burn _value).
   Proof.
-    intros st env msg this Hreq st0 result Hexec.
+    intros st env msg this Hfunc Hreq st0 result Hexec.
 
     unfold funcspec_Burn in Hreq; simpl in Hreq.
     destruct Hreq as [Hvalue HtotalSupply].
@@ -1174,12 +1177,13 @@ Section dsl_burn.
   (* If no require can be satisfied, burn() must revert to the initial state *)
   Lemma burn_dsl_revert:
     forall st env msg this,
+      m_func msg = mc_burn _value ->
       ~ spec_require (funcspec_Burn _value this env msg) st ->
       forall st0 result,
         dsl_exec burn_dsl st0 st env msg this nil = result ->
         result = Stop st0 (ev_revert this :: nil).
   Proof.
-    intros st env msg this Hreq_neg st0 result Hexec.
+    intros st env msg this Hfunc Hreq_neg st0 result Hexec.
 
     simpl in Hreq_neg.
     apply (Decidable.not_and _ _ (Nat.le_decidable _ _)) in Hreq_neg.
