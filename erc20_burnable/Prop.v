@@ -24,9 +24,9 @@ Require Export Lists.List.
 Require Import Model.
 Require Import Spec.
 
-Ltac arith_rewrite t := 
+Ltac arith_rewrite t :=
   let H := fresh "Harith" in
-  match t with 
+  match t with
   | ?x = ?y => assert (H: t); [auto with arith; try omega | rewrite H; clear H]
   end.
 
@@ -43,11 +43,11 @@ Ltac arith_rewrite t :=
 
 Inductive Sum : (@tmap address value) -> value -> Prop :=
  | Sum_emp : Sum tmap_emp 0
- | Sum_add : forall m v a' v', 
+ | Sum_add : forall m v a' v',
      Sum m v
      -> m a' = 0
      -> Sum (m $+ {a' <- v'}) (v + v')
- | Sum_del : forall m v a', 
+ | Sum_del : forall m v a',
      Sum m v
      -> Sum (m $+ {a' <- 0}) (v - (m a')).
 
@@ -72,7 +72,7 @@ Proof.
   intros.
   assert (Ht :minus_with_underflow (m a) (m a) = 0).
   unfold minus_with_underflow.
-  rewrite blt_irrefl. 
+  rewrite blt_irrefl.
     auto with arith.
     rewrite Ht.
   apply Sum_del; trivial.
@@ -88,21 +88,21 @@ Open Scope list_scope.
 
 
 Section List.
-  
+
   Context  `{A: Type}.
 
   Context `{BEq A}.
 
-  Fixpoint list_in (a: A) (al: list A) : bool := 
+  Fixpoint list_in (a: A) (al: list A) : bool :=
     match al with
-    | nil => false 
-    | cons a' al' => if beq a a' then true 
+    | nil => false
+    | cons a' al' => if beq a a' then true
                      else list_in a al'
   end.
 
-Fixpoint no_repeat (al: list A) : bool := 
-  match al with 
-  | nil => true 
+Fixpoint no_repeat (al: list A) : bool :=
+  match al with
+  | nil => true
   | cons a' al' => andb (negb (list_in a' al')) (no_repeat al')
   end.
 
@@ -119,11 +119,11 @@ Proof.
 Qed.
 
 Lemma sum_add_cons : forall (al : list address) m (a: address),
-    list_in a al = false 
+    list_in a al = false
     -> no_repeat al = true
     -> m a + sum m al  = sum m (a :: al).
 Proof.
-  induction al. 
+  induction al.
     intros m a Hin Hnr.
     simpl.
     trivial.
@@ -132,7 +132,7 @@ Proof.
     simpl in Hin'.
     decbeq a' a.
     trivial.
-  substH IHal with (IHal m a' Hnin). 
+  substH IHal with (IHal m a' Hnin).
   simpl.
   simpl in IHal.
   omega.
@@ -143,7 +143,7 @@ Lemma sum_del_none : forall al m a,
     -> no_repeat al = true
     -> sum (m $+ {a <- 0}) al  = sum m al.
 Proof.
-  induction al. 
+  induction al.
     intros m a Hin Hnr.
     simpl.
     trivial.
@@ -162,7 +162,7 @@ Lemma sum_del_any : forall al m a,
     -> no_repeat al = true
     -> m a + sum (m $+ {a <- 0}) al  = sum m al.
 Proof.
-  induction al. 
+  induction al.
     intros m a Hin Hnr.
     simpl in Hin.
     discriminate.
@@ -243,7 +243,7 @@ Qed.
 
 Lemma Sum_ge_strong : forall m t,
     Sum m t
-    -> forall a al, 
+    -> forall a al,
       list_in a al = false
       -> no_repeat al = true
       -> t >= m a + sum m al.
@@ -287,10 +287,10 @@ Proof.
       assert (Hy:=sum_del_any al' m a' Hx Hnr).
       substH IHSum with (IHSum a al' Hnin Hnr).
       rewrite <- Hy in IHSum.
-      assert (Hxx: forall a b c d, 
+      assert (Hxx: forall a b c d,
           a >= b + (c + d)
           -> a - c >=  b + d).
-        clear.  
+        clear.
         intros.
         omega.
       apply Hxx; trivial.
@@ -335,7 +335,7 @@ Proof.
   trivial. trivial.
 Qed.
 
-Lemma Sum_sig : 
+Lemma Sum_sig :
   forall m a t,
     m = $0 $+ { a <- t }
     -> Sum m t.
@@ -591,7 +591,7 @@ Proof.
 Qed.
 
 Definition assert_genesis_event (e: event) (E: eventlist) : Prop :=
-  match E with 
+  match E with
     | nil => False
     | cons e' E => e = e'
   end.
@@ -603,7 +603,7 @@ Proof.
   intros.
   destruct E.
   + simpl in H.  inversion H.
-  + simpl in H. auto. 
+  + simpl in H. auto.
 Qed.
 
 Definition INV (env: env) (S: state) (E: eventlist) : Prop :=
@@ -929,14 +929,14 @@ Proof.
         (* a == m_sender msg *)
         rewrite Nat.eqb_eq in H1.
         subst a.
-        
+
         rewrite (tmap_get_upd_eq _ _ _).
         generalize (Hblncs (m_sender msg)).
         intros Hs.
         rewrite H2 in Hx1.
         destruct Hx1.
         rewrite (minus_safe _ _ H1).
-        omega. 
+        omega.
       }
       {
         (* a <> m_sender msg *)
@@ -952,10 +952,10 @@ Proof.
      destruct Hx1.
      generalize H1.
      generalize Htv.
-     apply Sum_dec.     
+     apply Sum_dec.
      exists creator. exists name. exists decimals. exists sym.
      inversion Hassert.  exists (v+x).
-     assert (total - v + (v+x) = total+x). 
+     assert (total - v + (v+x) = total+x).
      apply sub_add_add.
      rewrite H2 in Hx1.
      assert (total >= st_balances S (m_sender msg)).
@@ -963,7 +963,7 @@ Proof.
      apply Sum_ge.
      rewrite Htotal in Htv. auto.
      destruct Hx1.
-     
+
      generalize H6. generalize H5.
      apply abc.
      rewrite H5.
@@ -988,7 +988,7 @@ Proof.
   destruct Hx3 as [Hto [Hb Hxx]].
   split.
   - (* no overflow initially *)
-  
+
     rewrite Hb.
     intros a.
     destruct (beq_dec a (m_sender msg)).
@@ -1081,7 +1081,7 @@ Proof.
 Qed.
 
 (* Prop #1: total supply is fixed *)
-Theorem Property_totalSupply_fixed : 
+Theorem Property_totalSupply_fixed :
   forall env0 env ml C E C' E',
     create env0 C E
     -> env_step env0 env
@@ -1094,4 +1094,29 @@ Proof.
   apply INV_implies_totalSupply_fixed with env' (E++E').
   substH Hc with (create_INV _ _ C E Hc Hs).
   eapply steps_INV; eauto.
+Qed.
+
+(* Prop #2: a caller cannot burn tokens in other accounts *)
+Theorem Property_burn_no_others:
+  forall msg value,
+    m_func msg = mc_burn value ->
+    forall env C C' evts,
+      step env C msg C' evts ->
+      forall acct,
+        acct <> m_sender msg ->
+        st_balances (w_st C) acct = st_balances (w_st C') acct.
+Proof.
+  intros msg value Hmsg env C C' evts Hstep acct Hacct.
+
+  inversion Hstep;
+    try (subst msg; simpl in Hmsg; inversion Hmsg).
+
+  subst; simpl in *.
+  destruct H5 as [_ [_ [_ [Hbalances _]]]].
+  rewrite Hbalances.
+
+  unfold a2v_upd_dec.
+  apply neq_beq_false in Hacct.
+  rewrite (tmap_get_upd_ne _ _ _ _ (beq_sym _ _ Hacct)).
+  reflexivity.
 Qed.
