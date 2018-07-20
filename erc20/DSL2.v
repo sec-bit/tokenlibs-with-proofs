@@ -45,8 +45,6 @@ Delimit Scope dsl_scope with dsl.
 
 Definition State := StateMonad.state state.
 
-Definition FE A B := @Coq.Logic.FunctionalExtensionality.functional_extensionality A B.
-
 Inductive Stmt :=
   DSL_require (cond: env -> message -> State bool)
 | DSL_emit (evt: env -> message -> State event)
