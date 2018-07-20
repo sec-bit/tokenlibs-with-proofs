@@ -45,6 +45,8 @@ Delimit Scope dsl_scope with dsl.
 
 Definition State := StateMonad.state state.
 
+Definition FE A B := @Coq.Logic.FunctionalExtensionality.functional_extensionality A B.
+
 Inductive Stmt :=
   DSL_require (cond: env -> message -> State bool)
 | DSL_emit (evt: env -> message -> State event)
@@ -373,6 +375,24 @@ Notation "'@string' x = expr ; stmt" :=
 
 Require Import Spec.
 
+Definition get_evl (sevl : eventlist + eventlist) : eventlist :=
+  match sevl with
+  | inr evl => evl
+  | inl evl => evl
+  end.
+
+Definition dsl_sat_spec (fcall: mcall)
+                        (fdsl: Stmt)
+                        (fspec: address -> env -> message -> Spec) : Prop :=
+  forall st env msg this,
+    m_func msg = fcall
+    -> spec_require (fspec this env msg) st
+    -> forall st0 result,
+      dsl_exec fdsl st0 env msg this nil = result
+      -> spec_trans (fspec this env msg) st (execState result st)
+        /\ spec_events (fspec this env msg) (execState result st)
+                      (get_evl (evalState result st)).
+
 Section dsl_transfer_from.
   Open Scope dsl_scope.
 
@@ -387,10 +407,10 @@ Section dsl_transfer_from.
   Context `{max_uint256: env -> message -> State uint256}.
 
   (* Arguments are immutable, generated from solidity *)
-  Context `{from_immutable: forall st env msg, evalState (from env msg) st = _from}.
-  Context `{to_immutable: forall st env msg, evalState (to env msg) st = _to}.
-  Context `{value_immutable: forall st env msg, evalState (value env msg) st = _value}.
-  Context `{max_uint256_immutable: forall st env msg, evalState (max_uint256 env msg) st = MAX_UINT256}.
+  Context `{from_immutable: forall env msg, from env msg = ret _from}.
+  Context `{to_immutable: forall env msg, to env msg = ret _to}.
+  Context `{value_immutable: forall env msg, value env msg = ret _value}.
+  Context `{max_uint256_immutable: forall env msg, max_uint256 env msg = ret MAX_UINT256}.
 
   (* DSL representation of transferFrom(), generated from solidity *)
   Definition transferFrom_dsl : Stmt :=
@@ -411,11 +431,184 @@ Section dsl_transfer_from.
   (* Auxiliary lemmas *)
   Lemma nat_nooverflow_dsl_nooverflow:
     forall (m: State a2v) st env msg,
-      (_from = _to \/ (_from <> _to /\ (evalState st m _to <= MAX_UINT256 - _value)))%nat ->
-      ((from == to) ||
-       ((fun env msg => m <*> to env msg) <= max_uint256 - value))%dsl env msg = otrue.
-  Proof. Abort.
+      m_func msg = mc_transferFrom _from _to _value ->
+      (_from = _to \/ (_from <> _to /\ (evalState m st _to <= MAX_UINT256 - _value)))%nat ->
+      evalState (((from == to) ||
+                  ((fun env msg => m <*> to env msg) <= max_uint256 - value))%dsl env msg) st
+      = evalState otrue st.
+  Proof.
+    intros until msg; intros Hmcall Hnat. 
+    apply transferFrom_value_inrange in Hmcall.
+    destruct Hmcall as [_ Hvalue].
+    unfold "=="%dsl, "<="%dsl, "||"%dsl, "||"%bool, "-"%dsl, dsl_op, evalState in *; simpl.
+    rewrite (from_immutable env msg),
+            (to_immutable env msg),
+            (value_immutable env msg),
+            (max_uint256_immutable env msg); simpl.
+    destruct Hnat.
+    - rewrite H, BNat.beq_refl; simpl.
+      match goal with |- context[match ?x with _ => _ end] => destruct x end; auto.
+    - destruct H as [Hneq Hle].
+      rewrite BNat.neq_beq_false; auto. 
+      destruct runState eqn:RUN; simpl in *.
+      unfold ble_nat. rewrite le_blt_false; auto.
+  Qed.
 
+  Lemma transferFrom_cond_dec:
+    forall st,
+      Decidable.decidable
+        (_from = _to \/ _from <> _to /\ (st_balances st _to <= MAX_UINT256 - _value)%nat).
+  Proof.
+    intros. apply Decidable.dec_or.
+    - apply Nat.eq_decidable.
+    - apply Decidable.dec_and; auto using neq_decidable, Nat.le_decidable.
+  Qed.
+
+  Lemma transferFrom_cond_impl:
+    forall st env msg,
+      m_func msg = mc_transferFrom _from _to _value ->
+      ~ (_from = _to \/ _from <> _to /\ (st_balances st _to <= MAX_UINT256 - _value)%nat) ->
+      evalState (((from == to) ||
+                  ((fun env msg => balances env msg <*> to env msg) <= max_uint256 - value))%dsl env msg) st
+      = evalState ofalse st.
+  Proof.
+    intros st env msg Hfunc Hneg.
+    apply transferFrom_value_inrange in Hfunc.
+    destruct Hfunc as [_ Hvalue].
+    unfold "=="%dsl, "||"%dsl, "||"%bool, "<="%dsl, "-"%dsl, dsl_op.
+    rewrite (from_immutable _ _).
+    rewrite (to_immutable _ _).
+    rewrite (value_immutable _ _).
+    rewrite (max_uint256_immutable _ _).
+    simpl.
+    apply (Decidable.not_or _ _) in Hneg.
+    destruct Hneg as [Hneq Hneg].
+
+    apply Nat.eqb_neq in Hneq.
+    destruct beq_nat eqn:EQ. discriminate.
+
+    assert (Hvalue': (MAX_UINT256 >= _value)%nat) by auto.
+
+    apply (Decidable.not_and _ _ (neq_decidable _ _)) in Hneg.
+    cbn. destruct Hneg.
+    - apply Nat.eqb_neq in EQ. contradiction.
+    - apply not_le in H. unfold ble_nat. rewrite lt_blt_true; auto.
+  Qed.
+
+  Ltac simpl_rewrite':=
+    match goal with
+    | H: ?x = Datatypes.true |- context[?x] =>
+      repeat rewrite H; simpl
+    | H: ?x = Datatypes.false |- context[?x] =>
+      repeat rewrite H; simpl
+    | H: ?x <=? ?y = _ |- context[negb (?y <? ?x)] =>
+      rewrite Nat.leb_antisym in H; repeat rewrite H; simpl
+    | H: ?x = ?y |- context[?x <? ?y] =>
+      assert(x <? y = Datatypes.false) as ?H' by (rewrite H; apply Nat.ltb_irrefl);
+      repeat rewrite H'; simpl
+    end.
+
+  Ltac simpl_rewrite := repeat simpl_rewrite'.
+
+  Lemma transferFrom_dsl_sat_spec_1:
+    dsl_sat_spec (mc_transferFrom _from _to _value)
+                 transferFrom_dsl
+                 (funcspec_transferFrom_1 _from _to _value).
+  Proof.
+    unfold dsl_sat_spec.
+    intros st env msg this Hfunc Hreq st0 result Hexec.
+
+    simpl in Hreq.
+    destruct Hreq as [Hreq_blncs_lo [Hreq_blncs_hi [Hreq_allwd_lo Hreq_allwd_hi]]].
+    apply Nat.leb_le in Hreq_blncs_lo.
+    generalize (nat_nooverflow_dsl_nooverflow (ret (st_balances st)) st env msg Hfunc Hreq_blncs_hi).
+    clear Hreq_blncs_hi. intros Hreq_blncs_hi.
+    apply Nat.leb_le in Hreq_allwd_lo.
+    apply Nat.ltb_lt in Hreq_allwd_hi.
+
+    unfold execState, evalState in *. simpl in *.
+    repeat rewrite from_immutable in *.
+    repeat rewrite to_immutable in *.
+    repeat rewrite value_immutable in *.
+    repeat rewrite max_uint256_immutable in *.
+    simpl in Hexec, Hreq_blncs_hi.
+    subst result; simpl.
+    
+    simpl_rewrite.
+    repeat (split; auto).
+  Qed.
+
+  Lemma transferFrom_dsl_sat_spec_2:
+    dsl_sat_spec (mc_transferFrom _from _to _value)
+                 transferFrom_dsl
+                 (funcspec_transferFrom_2 _from _to _value).
+  Proof.
+    unfold dsl_sat_spec.
+    intros st env msg this Hfunc Hreq st0 result Hexec.
+
+    simpl in Hreq. destruct Hreq as [Hreq_blncs_lo [Hreq_blncs_hi [Hreq_allwd_lo Hreq_allwd_hi]]].
+    generalize (nat_nooverflow_dsl_nooverflow (ret (st_balances st)) st env msg Hfunc Hreq_blncs_hi).
+    clear Hreq_blncs_hi. intros Hreq_blncs_hi.
+    apply Nat.leb_le in Hreq_blncs_lo.
+    apply Nat.leb_le in Hreq_allwd_lo.
+
+    unfold execState, evalState in *. simpl in *.
+    repeat rewrite from_immutable in *.
+    repeat rewrite to_immutable in *.
+    repeat rewrite value_immutable in *.
+    repeat rewrite max_uint256_immutable in *.
+    subst result; simpl in *.
+    
+    simpl_rewrite. 
+    repeat (split; auto).
+  Qed.
+
+  (* If no require can be satisfied, transferFrom() must revert to the initial state *)
+  Lemma transferFrom_dsl_revert:
+    forall st env msg this,
+      m_func msg = mc_transferFrom _from _to _value ->
+      ~ spec_require (funcspec_transferFrom_1 _from _to _value this env msg) st ->
+      ~ spec_require (funcspec_transferFrom_2 _from _to _value this env msg) st ->
+      (forall addr0 addr1, (st_allowed st (addr0, addr1) <= MAX_UINT256)%nat) ->
+      forall st0 result,
+        dsl_exec transferFrom_dsl st0 env msg this nil = result ->
+        runState result st = (inl (ev_revert this :: nil), st0).
+  Proof.
+    unfold funcspec_transferFrom_1, funcspec_transferFrom_2, ">="%nat.
+    intros st env msg this Hfunc Hreq1_neg Hreq2_neg Hallwd_inv st0 result Hexec;
+      simpl in Hreq1_neg, Hreq2_neg.
+
+    subst. simpl.
+    repeat rewrite from_immutable in *.
+    repeat rewrite to_immutable in *.
+    repeat rewrite value_immutable in *.
+    repeat rewrite max_uint256_immutable in *.
+    simpl.
+
+    destruct (negb (st_balances st _from <? _value)) eqn: Hx1; simpl; auto.
+    destruct (beq_nat _ _ || ble_nat _ _)%bool eqn: Hx2; simpl; auto.
+    destruct (negb (st_allowed st _ <? _)) eqn: Hx3; simpl; auto.
+    destruct (st_allowed st (_from, m_sender msg) <? MAX_UINT256) eqn: Hx4; simpl; auto.
+    
+    exfalso. apply Hreq1_neg.
+    apply orb_true_iff in Hx2.
+    split. apply Nat.ltb_ge. apply negb_true_iff. auto.
+    split. destruct (Nat.eq_dec _from _to); auto.
+      destruct Hx2; [left|right]. auto using BNat.beq_true_eq.
+      split; auto. apply blt_false_le. unfold ble_nat in H. destruct blt_nat; congruence.
+    split. apply Nat.ltb_ge. apply negb_true_iff. auto.
+    apply Nat.ltb_lt. auto.
+
+    exfalso. apply Hreq2_neg.
+    split. apply Nat.ltb_ge. apply negb_true_iff. auto.
+    split. apply orb_true_iff in Hx2.
+      destruct (Nat.eq_dec _from _to); auto.
+      destruct Hx2; [left|right]. auto using BNat.beq_true_eq.
+      split; auto. apply blt_false_le. unfold ble_nat in H. destruct blt_nat; congruence.
+    split. apply Nat.ltb_ge. apply negb_true_iff. auto.
+    apply Nat.ltb_ge in Hx4. apply Nat.le_antisymm; auto.
+  Qed.
+  
   Close Scope dsl_scope.
 End dsl_transfer_from.
 
