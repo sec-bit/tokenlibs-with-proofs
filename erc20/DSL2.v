@@ -391,6 +391,21 @@ Definition dsl_sat_spec (fcall: mcall)
         /\ spec_events (fspec this env msg) (execState result st)
                       (get_evl (evalState result st)).
 
+Ltac simpl_rewrite':=
+  match goal with
+  | H: ?x = Datatypes.true |- context[?x] =>
+    repeat rewrite H; simpl
+  | H: ?x = Datatypes.false |- context[?x] =>
+    repeat rewrite H; simpl
+  | H: ?x <=? ?y = _ |- context[negb (?y <? ?x)] =>
+    rewrite Nat.leb_antisym in H; repeat rewrite H; simpl
+  | H: ?x = ?y |- context[?x <? ?y] =>
+    assert(x <? y = Datatypes.false) as ?H' by (rewrite H; apply Nat.ltb_irrefl);
+    repeat rewrite H'; simpl
+  end.
+
+Ltac simpl_rewrite := repeat simpl_rewrite'.
+
 Section dsl_transfer_from.
   Open Scope dsl_scope.
 
@@ -493,20 +508,7 @@ Section dsl_transfer_from.
     - apply not_le in H. unfold ble_nat. rewrite lt_blt_true; auto.
   Qed.
 
-  Ltac simpl_rewrite':=
-    match goal with
-    | H: ?x = Datatypes.true |- context[?x] =>
-      repeat rewrite H; simpl
-    | H: ?x = Datatypes.false |- context[?x] =>
-      repeat rewrite H; simpl
-    | H: ?x <=? ?y = _ |- context[negb (?y <? ?x)] =>
-      rewrite Nat.leb_antisym in H; repeat rewrite H; simpl
-    | H: ?x = ?y |- context[?x <? ?y] =>
-      assert(x <? y = Datatypes.false) as ?H' by (rewrite H; apply Nat.ltb_irrefl);
-      repeat rewrite H'; simpl
-    end.
-
-  Ltac simpl_rewrite := repeat simpl_rewrite'.
+  
 
   Lemma transferFrom_dsl_sat_spec_1:
     dsl_sat_spec (mc_transferFrom _from _to _value)
@@ -621,9 +623,9 @@ Section dsl_transfer.
   Context `{max_uint256: env -> message -> State uint256}.
 
   (* Arguments are immutable, generated from solidity *)
-  Context `{to_immutable: forall st env msg, evalState st (to env msg) = _to}.
-  Context `{value_immutable: forall st env msg, evalState st (value env msg) = _value}.
-  Context `{max_uint256_immutable: forall st env msg, evalState st (max_uint256 env msg) = MAX_UINT256}.
+  Context `{to_immutable: forall env msg, (to env msg) = ret _to}.
+  Context `{value_immutable: forall env msg, (value env msg) = ret _value}.
+  Context `{max_uint256_immutable: forall env msg, (max_uint256 env msg) = ret MAX_UINT256}.
 
   (* DSL representation of transfer(), generated from solidity *)
   Definition transfer_dsl : Stmt :=
@@ -634,7 +636,112 @@ Section dsl_transfer.
      (@emit Transfer(msg.sender, to, value)) ;
      (@return true)
     ).
+  
+  (* Auxiliary lemmas *)
+  Lemma nat_nooverflow_dsl_nooverflow':
+    forall (m: State a2v) st env msg,
+      m_func msg = mc_transfer _to _value ->
+      (m_sender msg = _to \/ (m_sender msg <> _to /\ (evalState m st _to <= MAX_UINT256 - _value)))%nat ->
+      evalState (((msg.sender == to) ||
+                  ((fun env msg => m <*> to env msg) <= max_uint256 - value))%dsl env msg) st
+      = evalState otrue st.
+  Proof.
+    intros m st env msg Hfunc Hnat.
 
+    apply transfer_value_inrange in Hfunc.
+    destruct Hfunc as [_ Hvalue].
+
+    unfold "||"%dsl, "||"%bool, "=="%dsl, "<="%dsl, "-"%dsl, dsl_op, evalState in *.
+    rewrite (to_immutable env msg),
+            (max_uint256_immutable env msg),
+            (value_immutable env msg).
+    destruct Hnat; simpl.
+    - rewrite H, BNat.beq_refl; simpl.
+      match goal with |- context[match ?x with _ => _ end] => destruct x end; auto.
+    - destruct H as [Hneq Hle].
+      rewrite BNat.neq_beq_false; auto. 
+      destruct runState eqn:RUN; simpl in *.
+      unfold ble_nat. rewrite le_blt_false; auto.
+  Qed.
+
+  Lemma transfer_cond_impl:
+    forall st env msg,
+      m_func msg = mc_transfer _to _value ->
+      m_sender msg <> _to /\
+      ~ (m_sender msg <> _to /\ (st_balances st _to <= MAX_UINT256 - _value)%nat) ->
+      evalState ((((fun env msg => ret (m_sender msg)) == to) ||
+                  (balances [to] <= max_uint256 - value))%dsl env msg) st
+      = evalState ofalse st.
+  Proof.
+    intros st env msg Hfunc Hcond.
+
+    apply transfer_value_inrange in Hfunc.
+    destruct Hfunc as [_ Hvalue].
+    destruct Hcond as [Hneq Heq].
+
+    unfold "=="%dsl, "||"%dsl, "||"%bool, "<="%dsl, "-"%dsl, dsl_op, evalState.
+    rewrite (to_immutable _ _).
+    rewrite (value_immutable _ _).
+    rewrite (max_uint256_immutable _ _).
+    simpl.
+    rewrite BNat.neq_beq_false; auto.
+    apply (Decidable.not_and _ _ (neq_decidable _ _)) in Heq.
+    destruct Heq; [contradiction|].
+    apply not_le in H.
+    unfold ble_nat. rewrite lt_blt_true; auto.
+  Qed.
+
+  (* Manually proved *)
+  Lemma transfer_dsl_sat_spec:
+    dsl_sat_spec (mc_transfer _to _value)
+                 transfer_dsl
+                 (funcspec_transfer _to _value).
+  Proof.
+    unfold dsl_sat_spec.
+    intros st env msg this Hfunc Hreq st0 result Hexec.
+
+    unfold funcspec_transfer in Hreq; simpl in Hreq.
+    destruct Hreq as [Hreq_blncs_lo Hreq_blncs_hi].
+    unfold ">="%nat in Hreq_blncs_lo. apply Nat.leb_le in Hreq_blncs_lo.
+    generalize(nat_nooverflow_dsl_nooverflow' (ret (st_balances st)) st env msg Hfunc Hreq_blncs_hi).
+    clear Hreq_blncs_hi. intros Hreq_blncs_hi.
+
+    subst; simpl. unfold evalState, runState, execState in *; simpl in *.
+    repeat rewrite value_immutable in *.
+    repeat rewrite to_immutable in *.
+    repeat rewrite max_uint256_immutable in *.
+    simpl in *.
+    simpl_rewrite.
+    repeat (split; auto).
+  Qed.
+
+  (* If no require can be satisfied, transfer() must revert to the initial state *)
+  Lemma transfer_dsl_revert:
+    forall st env msg this,
+      m_func msg = mc_transfer _to _value ->
+      ~ spec_require (funcspec_transfer _to _value this env msg) st ->
+      forall st0 result,
+        dsl_exec transfer_dsl st0 env msg this nil = result ->
+        runState result st = (inl (ev_revert this :: nil), st0).
+  Proof.
+    intros st env msg this Hfunc Hreq_neg st0 result Hexec.
+    subst. unfold runState; simpl in *.
+    repeat rewrite to_immutable in *.
+    repeat rewrite value_immutable in *.
+    repeat rewrite max_uint256_immutable in *.
+    simpl.
+
+    destruct (negb (st_balances st _ <? _)) eqn: Hx1; simpl; auto.
+    destruct (beq_nat _ _ || ble_nat _ _)%bool eqn: Hx2; simpl; auto.
+    
+    exfalso. apply Hreq_neg.
+    apply orb_true_iff in Hx2.
+    split. apply Nat.ltb_ge. apply negb_true_iff. auto.
+    destruct (Nat.eq_dec (m_sender msg) _to); auto.
+    destruct Hx2; [left|right]. auto using BNat.beq_true_eq.
+    split; auto. apply blt_false_le. unfold ble_nat in H. destruct blt_nat; congruence.
+  Qed.
+  
   Close Scope dsl_scope.
 End dsl_transfer.
 
@@ -688,12 +795,35 @@ Section dsl_allowance.
   Context `{ _spender: address }.
 
   (* Arguments are immutable, generated from solidity *)
-  Context `{ owner_immutable: forall st env msg, evalState st (owner env msg) = _owner }.
-  Context `{ spender_immutable: forall st env msg, evalState st (spender env msg) = _spender }.
+  Context `{ owner_immutable: forall env msg, (owner env msg) = ret _owner }.
+  Context `{ spender_immutable: forall env msg, (spender env msg) = ret _spender }.
 
   (* DSL representation of transfer(), generated from solidity *)
   Definition allowance_dsl : Stmt :=
     (@return allowed[owner][spender]).
+
+  Lemma allowance_dsl_sat_spec:
+    dsl_sat_spec (mc_allowance _owner _spender)
+                 allowance_dsl
+                 (funcspec_allowance _owner _spender).
+  Proof.
+    intros st env msg this _ Hreq st0 result Hexec. subst; simpl.
+    unfold execState, evalState, runState; simpl.
+    rewrite owner_immutable, spender_immutable; auto.
+  Qed.
+
+  (* If no require can be satisfied, allowance() must revert to the initial state *)
+  Lemma allowance_dsl_revert:
+    forall st env msg this,
+      m_func msg = mc_allowance _owner _spender ->
+      ~ spec_require (funcspec_allowance _owner _spender this env msg) st ->
+      forall st0 result,
+        dsl_exec allowance_dsl st0 env msg this nil = result ->
+        runState result st = (inl (ev_revert this :: nil), st0).
+  Proof.
+    intros st env msg this _ Hreq_neg st0 result Hexec.
+    simpl in Hreq_neg. contradiction.
+  Qed.
 
   Close Scope dsl_scope.
 End dsl_allowance.
@@ -712,10 +842,10 @@ Section dsl_constructor.
   Context `{ _tokenSymbol: string }.
 
   (* Arguments are immutable, generated from solidity *)
-  Context `{ initialAmount_immutable: forall st env msg, evalState st (initialAmount env msg) = _initialAmount }.
-  Context `{ decimalUnits_immutable: forall st env msg, evalState st (decimalUnits env msg) = _decimalUnits }.
-  Context `{ tokenName_immutable: forall st env msg, evalState st (tokenName env msg) = _tokenName }.
-  Context `{ tokenSymbol_immutable: forall st env msg, evalState st (tokenSymbol env msg) = _tokenSymbol }.
+  Context `{ initialAmount_immutable: forall env msg, initialAmount env msg = ret _initialAmount }.
+  Context `{ decimalUnits_immutable: forall env msg, decimalUnits env msg = ret _decimalUnits }.
+  Context `{ tokenName_immutable: forall env msg, tokenName env msg = ret _tokenName }.
+  Context `{ tokenSymbol_immutable: forall env msg, tokenSymbol env msg = ret _tokenSymbol }.
 
   (* DSL representation of constructor, generated from solidity *)
   Definition ctor_dsl : Stmt :=
@@ -726,6 +856,29 @@ Section dsl_constructor.
      @symbol = tokenSymbol ;
      @ctor
     ).
+
+  (* Manually proved *)
+  Lemma ctor_dsl_sat_spec:
+    forall st,
+      st_balances st = $0 ->
+      st_allowed st = $0 ->
+      forall env msg this,
+        m_func msg = mc_EIP20 _initialAmount _tokenName _decimalUnits _tokenSymbol ->
+        spec_require (funcspec_EIP20 _initialAmount _tokenName _decimalUnits _tokenSymbol this env msg) st ->
+        forall st0 result,
+          dsl_exec ctor_dsl st0 env msg this nil = result ->
+          spec_trans (funcspec_EIP20 _initialAmount _tokenName _decimalUnits _tokenSymbol this env msg) st (execState result st) /\
+          spec_events (funcspec_EIP20 _initialAmount _tokenName _decimalUnits _tokenSymbol this env msg) (execState result st) (get_evl (evalState result st)).
+  Proof.
+    intros st Hblns_init Hallwd_init env msg this _ Hreq st0 result Hexec.
+    subst. simpl in *.
+    repeat rewrite initialAmount_immutable.
+    repeat rewrite decimalUnits_immutable.
+    repeat rewrite tokenName_immutable.
+    repeat rewrite tokenSymbol_immutable.
+    simpl. repeat (split; auto).
+    rewrite Hblns_init. auto.
+  Qed.
 
   Close Scope dsl_scope.
 End dsl_constructor.
