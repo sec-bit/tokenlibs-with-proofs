@@ -281,10 +281,10 @@ Definition dsl_op {A B C} (op : A -> B -> C)
            (env: env) (msg: message) : State C :=
   (op <$> x env msg) <*> y env msg.
 
-Definition dsl_lt  := dsl_op ltb.
+Definition dsl_lt  := dsl_op Nat.ltb.
 Definition dsl_ge x y e m := negb <$> dsl_lt x y e m.
-Definition dsl_le  := dsl_op ble_nat.
-Definition dsl_eq  := dsl_op beq_nat.
+Definition dsl_le  := dsl_op Nat.leb.
+Definition dsl_eq  := dsl_op Nat.eqb.
 Definition dsl_add := dsl_op add.
 Definition dsl_sub := dsl_op sub.
 Definition dsl_or  := dsl_op orb.
@@ -459,12 +459,12 @@ Section dsl_transfer_from.
             (value_immutable env msg),
             (max_uint256_immutable env msg); simpl.
     destruct Hnat.
-    - rewrite H, BNat.beq_refl; simpl.
+    - rewrite H, Nat.eqb_refl; simpl.
       match goal with |- context[match ?x with _ => _ end] => destruct x end; auto.
     - destruct H as [Hneq Hle].
-      rewrite BNat.neq_beq_false; auto. 
+      apply Nat.eqb_neq in Hneq. rewrite Hneq.
       destruct runState eqn:RUN; simpl in *.
-      unfold ble_nat. rewrite le_blt_false; auto.
+      apply Nat.leb_le; auto.
   Qed.
 
   Lemma transferFrom_cond_dec:
@@ -505,9 +505,8 @@ Section dsl_transfer_from.
     apply (Decidable.not_and _ _ (neq_decidable _ _)) in Hneg.
     cbn. destruct Hneg.
     - apply Nat.eqb_neq in EQ. contradiction.
-    - apply not_le in H. unfold ble_nat. rewrite lt_blt_true; auto.
+    - apply Nat.leb_nle. auto.
   Qed.
-
   
 
   Lemma transferFrom_dsl_sat_spec_1:
@@ -586,7 +585,7 @@ Section dsl_transfer_from.
     simpl.
 
     destruct (negb (st_balances st _from <? _value)) eqn: Hx1; simpl; auto.
-    destruct (beq_nat _ _ || ble_nat _ _)%bool eqn: Hx2; simpl; auto.
+    destruct ( (_ =? _) || (_ <=? _))%bool eqn: Hx2; simpl; auto.
     destruct (negb (st_allowed st _ <? _)) eqn: Hx3; simpl; auto.
     destruct (st_allowed st (_from, m_sender msg) <? MAX_UINT256) eqn: Hx4; simpl; auto.
     
@@ -594,8 +593,8 @@ Section dsl_transfer_from.
     apply orb_true_iff in Hx2.
     split. apply Nat.ltb_ge. apply negb_true_iff. auto.
     split. destruct (Nat.eq_dec _from _to); auto.
-      destruct Hx2; [left|right]. auto using BNat.beq_true_eq.
-      split; auto. apply blt_false_le. unfold ble_nat in H. destruct blt_nat; congruence.
+      destruct Hx2; [left|right]. apply Nat.eqb_eq; auto.
+      split; auto. apply Nat.leb_le. auto.
     split. apply Nat.ltb_ge. apply negb_true_iff. auto.
     apply Nat.ltb_lt. auto.
 
@@ -603,8 +602,8 @@ Section dsl_transfer_from.
     split. apply Nat.ltb_ge. apply negb_true_iff. auto.
     split. apply orb_true_iff in Hx2.
       destruct (Nat.eq_dec _from _to); auto.
-      destruct Hx2; [left|right]. auto using BNat.beq_true_eq.
-      split; auto. apply blt_false_le. unfold ble_nat in H. destruct blt_nat; congruence.
+      destruct Hx2; [left|right]. apply Nat.eqb_eq; auto. 
+      split; auto. apply Nat.leb_le; auto.
     split. apply Nat.ltb_ge. apply negb_true_iff. auto.
     apply Nat.ltb_ge in Hx4. apply Nat.le_antisymm; auto.
   Qed.
@@ -656,12 +655,12 @@ Section dsl_transfer.
             (max_uint256_immutable env msg),
             (value_immutable env msg).
     destruct Hnat; simpl.
-    - rewrite H, BNat.beq_refl; simpl.
+    - rewrite H, Nat.eqb_refl; simpl.
       match goal with |- context[match ?x with _ => _ end] => destruct x end; auto.
     - destruct H as [Hneq Hle].
-      rewrite BNat.neq_beq_false; auto. 
+      apply Nat.eqb_neq in Hneq. rewrite Hneq.
       destruct runState eqn:RUN; simpl in *.
-      unfold ble_nat. rewrite le_blt_false; auto.
+      apply Nat.leb_le; auto.
   Qed.
 
   Lemma transfer_cond_impl:
@@ -684,11 +683,9 @@ Section dsl_transfer.
     rewrite (value_immutable _ _).
     rewrite (max_uint256_immutable _ _).
     simpl.
-    rewrite BNat.neq_beq_false; auto.
+    apply Nat.eqb_neq in Hneq. rewrite Hneq. apply Nat.eqb_neq in Hneq.
     apply (Decidable.not_and _ _ (neq_decidable _ _)) in Heq.
-    destruct Heq; [contradiction|].
-    apply not_le in H.
-    unfold ble_nat. rewrite lt_blt_true; auto.
+    destruct Heq; [contradiction|apply Nat.leb_nle; auto].
   Qed.
 
   (* Manually proved *)
@@ -732,14 +729,14 @@ Section dsl_transfer.
     simpl.
 
     destruct (negb (st_balances st _ <? _)) eqn: Hx1; simpl; auto.
-    destruct (beq_nat _ _ || ble_nat _ _)%bool eqn: Hx2; simpl; auto.
+    destruct ((_ =? _) || (_ <=? _))%bool eqn: Hx2; simpl; auto.
     
     exfalso. apply Hreq_neg.
     apply orb_true_iff in Hx2.
     split. apply Nat.ltb_ge. apply negb_true_iff. auto.
     destruct (Nat.eq_dec (m_sender msg) _to); auto.
-    destruct Hx2; [left|right]. auto using BNat.beq_true_eq.
-    split; auto. apply blt_false_le. unfold ble_nat in H. destruct blt_nat; congruence.
+    destruct Hx2; [left|right]. apply Nat.eqb_eq; auto.
+    split; auto. apply Nat.leb_le; auto.
   Qed.
   
   Close Scope dsl_scope.
@@ -753,12 +750,38 @@ Section dsl_balanceOf.
   Context `{ _owner: address }.
 
   (* Arguments are immutable, generated from solidity *)
-  Context `{ owner_immutable: forall st env msg, evalState st (owner env msg) = _owner }.
+  Context `{ owner_immutable: forall env msg, owner env msg = ret _owner }.
 
   (* DSL representation of transfer(), generated from solidity *)
   Definition balanceOf_dsl : Stmt :=
     (@return balances[owner]).
 
+  (* Manually proved *)
+  Lemma balanceOf_dsl_sat_spec:
+    dsl_sat_spec (mc_balanceOf _owner)
+                 balanceOf_dsl
+                 (funcspec_balanceOf _owner).
+  Proof.
+    unfold dsl_sat_spec.
+    intros st env msg this _ Hreq st0 result Hexec.
+    subst; simpl.
+    unfold execState, evalState, runState; simpl.
+    rewrite (owner_immutable _ _ ). simpl. auto.
+  Qed.
+
+  (* If no require can be satisfied, balanceOf() must revert to the initial state *)
+  Lemma balanceOf_dsl_revert:
+    forall st env msg this,
+      m_func msg = mc_balanceOf _owner ->
+      ~ spec_require (funcspec_balanceOf _owner this env msg) st ->
+      forall st0 result,
+        dsl_exec balanceOf_dsl st0 env msg this nil = result ->
+        runState result st = (inl (ev_revert this :: nil), st0).
+  Proof.
+    intros st env msg this _ Hreq_neg st0 result Hexec.
+    simpl in Hreq_neg. contradiction.
+  Qed.
+  
   Close Scope dsl_scope.
 End dsl_balanceOf.
 
@@ -772,8 +795,8 @@ Section dsl_approve.
   Context `{ _value: uint256 }.
 
   (* Arguments are immutable, generated from solidity *)
-  Context `{ spender_immutable: forall st env msg, evalState st (spender env msg) = _spender }.
-  Context `{ value_immutable: forall st env msg, evalState st (value env msg) = _value }.
+  Context `{ spender_immutable: forall env msg, spender env msg = ret _spender }.
+  Context `{ value_immutable: forall env msg, value env msg = ret _value }.
 
   (* DSL representation of approve(), generated from solidity *)
   Definition approve_dsl : Stmt :=
@@ -781,6 +804,33 @@ Section dsl_approve.
      (@emit Approval(msg.sender, spender, value)) ;
      (@return true)
     ).
+
+  (* Manually proved *)
+  Lemma approve_dsl_sat_spec:
+    dsl_sat_spec (mc_approve _spender _value)
+                 approve_dsl
+                 (funcspec_approve _spender _value).
+  Proof.
+    unfold dsl_sat_spec.
+    intros st env msg this _ Hreq st0 result Hexec.
+    subst; simpl.
+    repeat rewrite (spender_immutable _ _).
+    repeat rewrite (value_immutable _ _).
+    repeat (split; auto).
+  Qed.
+
+  (* If no require can be satisfied, approve() must revert to the initial state *)
+  Lemma approve_dsl_revert:
+    forall st env msg this,
+      m_func msg = mc_approve _spender _value ->
+      ~ spec_require (funcspec_approve _spender _value this env msg) st ->
+      forall st0 result,
+        dsl_exec approve_dsl st0 env msg this nil = result ->
+        runState result st = (inl (ev_revert this :: nil), st0).
+  Proof.
+    intros st env msg this _ Hreq_neg st0 result Hexec.
+    simpl in Hreq_neg. contradiction.
+  Qed.
 
   Close Scope dsl_scope.
 End dsl_approve.
