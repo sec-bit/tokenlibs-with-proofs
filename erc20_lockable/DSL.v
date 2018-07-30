@@ -222,7 +222,7 @@ Fixpoint dsl_exec_prim
                 (expr st env msg)
                 (st_unLockTime st))
          evts
-     
+
   | DSL_unLockTime_upd expr =>
         Next (mk_st (st_symbol st)
                 (st_name st)
@@ -363,7 +363,7 @@ Definition dsl_neg :=
   fun x (st: state) (env: env) (msg: message) =>
     negb (x st env msg).
 
-  
+
 Definition dsl_add  :=
   fun x y (st: state) (env: env) (msg: message) =>
     (x st env msg) + (y st env msg).
@@ -478,12 +478,12 @@ Section dsl_transfer_from.
   Context `{to_immutable: forall st env msg, to st env msg = _to}.
   Context `{value_immutable: forall st env msg, value st env msg = _value}.
   Context `{max_uint256_immutable: forall st env msg, max_uint256 st env msg = MAX_UINT256}.
-  
+
 
   (* DSL representation of transferFrom(), generated from solidity *)
   Definition transferFrom_dsl : Stmt :=
     (@uint256 allowance = allowed[from][msg.sender] ;
-     @require(block.timestamp >= UnLockTime);  
+     @require(block.timestamp >= UnLockTime);
      @require(balances[from] >= value) ;
      @require((balances[to] <= max_uint256 - value)) ;
      @require(allowance >= value) ;
@@ -537,8 +537,7 @@ Section dsl_transfer_from.
     apply Nat.leb_le in Hreq_blncs_lo.
 
     simpl in Hexec.
-    Set Printing Depth 100.
-    
+
     simpl in Hexec.
     unfold ">="%dsl in Hexec.
 
@@ -547,7 +546,7 @@ Section dsl_transfer_from.
     simpl in Hexec.
 
     rewrite value_immutable in Hexec.
-    rewrite from_immutable in Hexec.                
+    rewrite from_immutable in Hexec.
     rewrite (Nat.ltb_antisym _ _) in Hexec.
     rewrite negb_involutive in Hexec.
     rewrite Hreq_blncs_lo in Hexec.
@@ -570,7 +569,7 @@ Section dsl_transfer_from.
 
     unfold "<"%dsl in Hexec.
     simpl in Hexec.
-     
+
     rewrite (from_immutable _ _ _) in Hexec.
     rewrite (value_immutable _ _ _) in Hexec.
     rewrite (max_uint256_immutable _ _ _) in Hexec.
@@ -578,7 +577,7 @@ Section dsl_transfer_from.
     apply Nat.ltb_lt in Hreq_allwd_max.
     rewrite Hreq_allwd_max in Hexec.
     simpl in Hexec.
-    
+
     unfold funcspec_transferFrom_1.
     simpl in Hexec.
     rewrite <- Hexec.
@@ -608,15 +607,15 @@ Lemma transferFrom_dsl_sat_spec_2:
 
     simpl in Hexec.
     (*Set Printing Depth 100.*)
-    
+
     unfold ">="%dsl in Hexec.
 
     rewrite Nat.leb_antisym in Hreq_lock.
     rewrite Hreq_lock in Hexec.
     simpl in Hexec.
-    
+
     rewrite from_immutable with st env msg in Hexec.
-    rewrite value_immutable in Hexec.                 
+    rewrite value_immutable in Hexec.
     rewrite (Nat.ltb_antisym _ _) in Hexec.
     rewrite negb_involutive in Hexec.
     rewrite Hreq_blncs_lo in Hexec.
@@ -639,14 +638,14 @@ Lemma transferFrom_dsl_sat_spec_2:
 
     unfold "<"%dsl in Hexec.
     simpl in Hexec.
-     
+
     rewrite (from_immutable _ _ _) in Hexec.
     rewrite (value_immutable _ _ _) in Hexec.
     rewrite (max_uint256_immutable _ _ _) in Hexec.
 
     rewrite Hreq_allwd_max in Hexec.
     rewrite Nat.ltb_irrefl in Hexec.
-    
+
     unfold funcspec_transferFrom_2.
     simpl in Hexec.
     rewrite <- Hexec.
@@ -739,7 +738,6 @@ Lemma transferFrom_dsl_sat_spec_2:
       simpl in Hexec.
       destruct (le_dec _value (st_balances st _from)).
       + (* balances[from] >= value *)
-        Print Nat.
         apply Nat.ltb_nlt in n.
         rewrite Nat.nlt_ge in n.
         generalize (Hreq1_impl n l);clear Hreq1_impl; intros Hreq1_impl.
@@ -758,7 +756,7 @@ Lemma transferFrom_dsl_sat_spec_2:
         unfold "-"%dsl in Hexec.
         rewrite (value_immutable _ _ _) in Hexec.
         rewrite (max_uint256_immutable _ _ _) in Hexec.
-      
+
         destruct (le_dec (st_balances st _to)  (MAX_UINT256 - _value)).
         {(* st_balances st _to <= MAX_UINT256 - _value*)
           apply Nat.leb_le in l0.
@@ -779,7 +777,7 @@ Lemma transferFrom_dsl_sat_spec_2:
             - auto.
           }
           clear Hreq1_impl; rename Himpl into Hreq1_impl.
-  
+
           apply (Decidable.not_and _ _ (Nat.le_decidable _ _)) in Hreq2_impl.
           assert(Himpl: (_value <= st_allowed st (_from, m_sender msg))%nat ->
                       st_allowed st (_from, m_sender msg) <> MAX_UINT256).
@@ -789,7 +787,7 @@ Lemma transferFrom_dsl_sat_spec_2:
             - auto.
           }
           clear Hreq2_impl; rename Himpl into Hreq2_impl.
-          
+
           destruct (le_dec _value (st_allowed st (_from, m_sender msg))).
           * (* allowed[from][msg.sender] >= value *)
             generalize (Hreq1_impl l1); clear Hreq1_impl; intros Hreq1_impl.
@@ -816,7 +814,7 @@ Lemma transferFrom_dsl_sat_spec_2:
             rewrite n0 in Hexec; simpl in Hexec.
             rewrite <- Hexec.
             split; auto.
-        
+
         }
         { (* st_balances st _to > MAX_UINT256 - _value*)
           apply Nat.leb_nle in n0.
@@ -837,7 +835,7 @@ Lemma transferFrom_dsl_sat_spec_2:
         rewrite <- Hexec.
         split; auto.
   Qed.
-  
+
   Close Scope dsl_scope.
 End dsl_transfer_from.
 
@@ -850,13 +848,13 @@ Section dsl_transfer.
   Context `{value: state -> env -> message -> uint256}.
   Context `{_value: uint256}.
   Context `{max_uint256: state -> env -> message -> uint256}.
-  
+
 
   (* Arguments are immutable, generated from solidity *)
   Context `{to_immutable: forall st env msg, to st env msg = _to}.
   Context `{value_immutable: forall st env msg, value st env msg = _value}.
   Context `{max_uint256_immutable: forall st env msg, max_uint256 st env msg = MAX_UINT256}.
- 
+
   (* DSL representation of transfer(), generated from solidity *)
   Definition transfer_dsl : Stmt :=
     (@require(block.timestamp >= UnLockTime);
@@ -930,7 +928,7 @@ Section dsl_transfer.
     rewrite (value_immutable _ _ _) in Hexec.
     rewrite (to_immutable _ _ _) in Hexec.
     simpl in Hexec.
-    
+
     unfold funcspec_transfer.
     rewrite <- Hexec.
     repeat rewrite (value_immutable _ _ _).
@@ -967,7 +965,7 @@ Section dsl_transfer.
       - apply (Decidable.not_and _ _ (Nat.le_decidable _ _)) in H.
         destruct H.
         + right. left. auto.
-        + right. right. auto.      
+        + right. right. auto.
     }
     clear Hreq_neg.
 
@@ -1002,7 +1000,7 @@ Section dsl_transfer.
         rewrite <- Hexec.
         split; auto.
         apply Nat.leb_le in l. auto.
-        
+
       + (* balances[msg.sender] < value *)
       apply not_le in n0.
       apply Nat.leb_gt in n0.
@@ -1105,13 +1103,13 @@ Section dsl_approve.
     simpl in Hreq.
     unfold dsl_neg in Hexec.
     unfold funcspec_approve in *.
-    
+
     unfold ">="%dsl in Hexec.
     apply Nat.leb_le in Hreq.
     rewrite Nat.leb_antisym in Hreq.
     rewrite Hreq in Hexec.
     simpl in Hexec.
- 
+
     rewrite <- Hexec.
     repeat rewrite (spender_immutable _ _ _).
     repeat rewrite (value_immutable _ _ _).
@@ -1133,15 +1131,15 @@ Section dsl_approve.
 
     simpl in Hexec.
     unfold ">="%dsl in Hexec.
-    
+
     apply Nat.ltb_lt in Hreq_neg.
     rewrite Hreq_neg in Hexec.
     simpl in Hexec.
 
-    rewrite <- Hexec. 
+    rewrite <- Hexec.
     split; auto.
   Qed.
-  
+
   Close Scope dsl_scope.
 End dsl_approve.
 
@@ -1176,7 +1174,7 @@ Section dsl_allowance.
     simpl in Hexec.
     unfold funcspec_allowance.
     rewrite <- Hexec.
-    rewrite (addr_immutable _ _ _).  
+    rewrite (addr_immutable _ _ _).
     rewrite (spender_immutable _ _ _).
     repeat (split; auto).
   Qed.
@@ -1251,7 +1249,7 @@ Section dsl_increaseApproval.
     rewrite (spender_immutable _ _ _) in Hexec.
     rewrite (addValue_immutable _ _ _) in Hexec.
     rewrite (max_uint256_immutable _ _ _) in Hexec.
-    
+
     rewrite Hreq_allow in Hexec.
     simpl in Hexec.
     rewrite (spender_immutable _ _ _) in Hexec.
@@ -1288,7 +1286,7 @@ Section dsl_increaseApproval.
               (~ (st_allowed st (m_sender msg, _spender) + _addValue <= MAX_UINT256)%nat)).
     {
       apply Decidable.or_not_l_iff_1; auto.
-       apply Nat.le_decidable.   
+       apply Nat.le_decidable.
     }
     clear Hreq_neg.
 
@@ -1302,8 +1300,6 @@ Section dsl_increaseApproval.
     + apply Nat.ltb_nlt in n. rewrite n in Hexec.
       simpl in Hexec.
 
-      Print Nat.
-
       apply Nat.ltb_ge in n. apply Hreq_impl in n.
       apply Nat.leb_nle in n.
 
@@ -1314,7 +1310,7 @@ Section dsl_increaseApproval.
       rewrite (max_uint256_immutable _ _ _) in Hexec.
       rewrite n in Hexec.
       simpl in Hexec.
-      rewrite <- Hexec. 
+      rewrite <- Hexec.
       split; auto.
   Qed.
 
@@ -1337,7 +1333,7 @@ Section dsl_decreaseApproval_1.
   Context `{ spender_immutable: forall st env msg, spender st env msg = _spender }.
   Context `{ subValue_immutable: forall st env msg, subValue st env msg = _subValue }.
   Context `{zero_address_immutable: forall st env msg, zero_address st env msg = 0}.
-  
+
   (* DSL representation of approve(), generated from solidity *)
   Definition decreaseApproval_dsl_1 : Stmt :=
    (@require(block.timestamp >= UnLockTime);
@@ -1359,7 +1355,7 @@ Section dsl_decreaseApproval_1.
     intros st env msg this Hreq st0 result Hexec.
     simpl in Hreq.
     destruct Hreq as [Hreq_lock Hreq_allow].
-    
+
     simpl in Hexec.
     unfold ">="%dsl in Hexec.
     apply Nat.leb_le in Hreq_lock.
@@ -1404,7 +1400,7 @@ Section dsl_decreaseApproval_1.
             ~ (st_allowed st (m_sender msg, _spender) < _subValue)%nat).
     {
       apply Decidable.or_not_l_iff_1; auto.
-       apply Nat.le_decidable.   
+       apply Nat.le_decidable.
     }
     clear Hreq_neg.
 
@@ -1423,10 +1419,10 @@ Section dsl_decreaseApproval_1.
       unfold "<"%dsl in Hexec.
       rewrite (spender_immutable _ _ _) in Hexec.
       rewrite (subValue_immutable _ _ _) in Hexec.
-      apply Nat.ltb_nlt in n. 
+      apply Nat.ltb_nlt in n.
       rewrite n in Hexec.
       simpl in Hexec.
-      rewrite <- Hexec. 
+      rewrite <- Hexec.
       split; auto.
   Qed.
 
@@ -1447,7 +1443,7 @@ Section dsl_decreaseApproval_2.
   (* Arguments are immutable, generated from solidity *)
   Context `{ spender_immutable: forall st env msg, spender st env msg = _spender }.
   Context `{ subValue_immutable: forall st env msg, subValue st env msg = _subValue }.
-  
+
   (* DSL representation of approve(), generated from solidity *)
   Definition decreaseApproval_dsl_2 : Stmt :=
      (@require(block.timestamp >= UnLockTime);
@@ -1469,7 +1465,7 @@ Section dsl_decreaseApproval_2.
     intros st env msg this Hreq st0 result Hexec.
     simpl in Hreq.
     destruct Hreq as [Hreq_lock Hreq_allow].
-    
+
     simpl in Hexec.
     unfold ">="%dsl in Hexec.
     apply Nat.leb_le in Hreq_lock.
@@ -1485,11 +1481,11 @@ Section dsl_decreaseApproval_2.
     simpl in Hexec.
 
     unfold Stop in Hexec.
-    
+
     rewrite (spender_immutable _ _ _) in Hexec.
     rewrite (subValue_immutable _ _ _) in Hexec.
     simpl in Hexec.
-    
+
     unfold funcspec_decreaseApproval_2.
     simpl.
     rewrite <- Hexec.
@@ -1516,7 +1512,7 @@ Section dsl_decreaseApproval_2.
              ~ (st_allowed st (m_sender msg, _spender) >= _subValue)%nat).
     {
       apply Decidable.or_not_l_iff_1; auto.
-       apply Nat.le_decidable.   
+       apply Nat.le_decidable.
     }
     clear Hreq_neg.
 
@@ -1537,15 +1533,13 @@ Section dsl_decreaseApproval_2.
       rewrite (subValue_immutable _ _ _) in Hexec.
       apply Nat.leb_nle in n.
 
-
-      Print Nat.
       rewrite <- Nat.leb_antisym in Hexec.
       rewrite n in Hexec.
       simpl in Hexec.
-      rewrite <- Hexec. 
+      rewrite <- Hexec.
       split; auto.
   Qed.
-  
+
   Close Scope dsl_scope.
 End dsl_decreaseApproval_2.
 
@@ -1558,7 +1552,7 @@ Section dsl_transferOwnership.
   Context `{ _newOwner: address }.
   Context `{ oldOwner : state -> env -> message -> address }.
   Context `{zero_address: state -> env -> message -> address}.
-  
+
    (* Arguments are immutable, generated from solidity *)
   Context `{ newOwner_immutable: forall st env msg, newOwner st env msg = _newOwner }.
   Context `{ oldOwner_immutable: forall st env msg, oldOwner st env msg = m_sender msg }.
@@ -1568,9 +1562,9 @@ Section dsl_transferOwnership.
     ( @require(oldOwner == owner);
       @require(newOwner != zero_address);
       @owner = newOwner;
-      (@emit OwnershipTransferred(owner, newOwner)) 
+      (@emit OwnershipTransferred(owner, newOwner))
     ).
-  
+
   (* Manually proved *)
   Lemma transferOwnership_dsl_sat_spec:
       forall st env msg this,
@@ -1586,7 +1580,7 @@ Section dsl_transferOwnership.
     destruct Hreq as [Hreq_sender Hreq_new].
     apply Nat.eqb_neq  in Hreq_new.
     apply Nat.eqb_eq in Hreq_sender.
-    
+
     unfold  "=="%dsl in Hexec.
     rewrite (oldOwner_immutable _ _ _) in Hexec.
     rewrite Hreq_sender in Hexec.
@@ -1606,7 +1600,7 @@ Section dsl_transferOwnership.
     rewrite <- Hexec.
     simpl.
     repeat rewrite (newOwner_immutable _ _ _).
-    repeat (split; auto).    
+    repeat (split; auto).
   Qed.
 
 (* If no require can be satisfied, approve() must revert to the initial state *)
@@ -1627,7 +1621,7 @@ Section dsl_transferOwnership.
             (~ _newOwner <> 0))).
     {
       apply Decidable.or_not_l_iff_1; auto.
-       apply Nat.eq_decidable.   
+       apply Nat.eq_decidable.
     }
     clear Hreq_neg.
 
@@ -1642,27 +1636,26 @@ Section dsl_transferOwnership.
       rewrite (oldOwner_immutable _ _ _) in H.
       apply Hreq_impl in H.
       apply Nat.eq_dne in H.
-      
+
       unfold "!="%dsl in Hexec.
       rewrite (zero_address_immutable _ _ _) in Hexec.
       rewrite (newOwner_immutable _ _ _) in Hexec.
       rewrite H in Hexec. simpl in Hexec.
-      rewrite <- Hexec. 
+      rewrite <- Hexec.
       split; auto.
-    + Print Nat.
-      apply Nat.eqb_neq in H.
+    + apply Nat.eqb_neq in H.
       assert ((oldOwner st env msg =? st_owner st) = ofalse).
       unfold ofalse. apply Nat.eqb_neq. auto.
       rewrite H0 in Hexec.
       simpl in Hexec.
-      rewrite <- Hexec. 
+      rewrite <- Hexec.
       split; auto.
     + unfold Decidable.decidable.
       destruct (beq_dec ( m_sender msg) (st_owner st)).
       - apply Nat.eqb_eq in H. left. auto.
       - apply Nat.eqb_neq in H. right. auto.
   Qed.
-   
+
   Close Scope dsl_scope.
 End dsl_transferOwnership.
 
@@ -1692,8 +1685,8 @@ Section dsl_constructor.
 
   Context `{zero_address: state -> env -> message -> address}.
   Context `{zero_address_immutable: forall st env msg, zero_address st env msg = 0}.
-  
-  
+
+
   (* DSL representation of constructor, generated from solidity *)
   Definition ctor_dsl : Stmt :=
     (@require(unLockTime >= block.timestamp);
@@ -1707,7 +1700,7 @@ Section dsl_constructor.
      @ctor;
      (@emit Transfer(zero_address, msg.sender, initialAmount))
     ).
-  
+
   (* Manually proved *)
    Lemma ctor_dsl_sat_spec:
     forall st,
@@ -1723,7 +1716,7 @@ Section dsl_constructor.
     intros st Hblns_init Hallwd_init env msg this Hreq st0 result Hexec.
 
      unfold funcspec_constructor in Hreq.  simpl in Hreq.
-    
+
     simpl in Hexec.
     unfold ">="%dsl in Hexec.
     rewrite (unLockTime_immutable _ _ _) in Hexec.
@@ -1732,7 +1725,7 @@ Section dsl_constructor.
     rewrite Nat.leb_antisym in Hreq.
     rewrite Hreq in Hexec.
     simpl in Hexec.
-      
+
     rewrite <- Hexec.
     repeat rewrite (initialAmount_immutable _ _ _).
     repeat rewrite (decimalUnits_immutable _ _ _).
@@ -1757,7 +1750,7 @@ Section dsl_constructor.
   Proof.
     intros st env msg this Hfunc Hreq_neg st0 result Hexec.
     simpl in Hreq_neg.
-    
+
     simpl in Hexec.
     unfold ">="%dsl in Hexec.
     rewrite (unLockTime_immutable _ _ _) in Hexec.
@@ -1771,7 +1764,7 @@ Section dsl_constructor.
       rewrite Nat.ltb_antisym in n.
       rewrite Hreq_neg in n.
       simpl in n. inversion n.
-  Qed.  
-  
+  Qed.
+
   Close Scope dsl_scope.
 End dsl_constructor.
