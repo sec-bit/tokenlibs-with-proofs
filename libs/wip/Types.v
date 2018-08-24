@@ -31,6 +31,9 @@ Definition uint256 := nat.
 Definition uint8 := nat.
 Definition time := nat.
 Definition address := nat.
+Definition byte := uint8.
+Definition bytes4 := nat.
+Definition bytes := list uint8.
 
 Module Label_as_DT <: UsualDecidableType := Nat_as_DT.
 Module UINT8_as_DT <: UsualDecidableType := Nat_as_DT.

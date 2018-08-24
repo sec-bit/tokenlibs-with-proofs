@@ -88,8 +88,8 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
   Definition sum_filter (m: t) (f: (K.t * elt) -> bool) : elt :=
     sum_raw (filter f (elements m)).
 
-  (* Definition sum (m: t): elt := *)
-  (*   fold (fun _ (v: elt) (acc: elt) => elt_add_raw acc v) m elt_zero. *)
+  Definition map_filter (m: t) (f: (K.t * elt) -> bool): list (K.t * elt) :=
+    filter f (elements m).
 
   Section Aux.
     Lemma not_eq_sym:
@@ -750,6 +750,16 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
       apply elt_add_raw_comm.
     Qed.
 
+    Lemma sum_filter_empty:
+      forall f,
+        sum_filter empty f = elt_zero.
+    Proof.
+      intros f.
+      unfold sum_filter.
+      simpl.
+      reflexivity.
+    Qed.
+
     Lemma sum_filter_true:
       forall (m: t),
         sum_filter m (fun _ => true) = sum m.
@@ -814,7 +824,90 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
         sum m = sum m'.
     Proof.
     Admitted.
+
+    Lemma sum_filter_equal:
+      forall f m m',
+        equal m m' ->
+        sum_filter m f = sum_filter m' f.
+    Proof.
+    Admitted.
   End Sum.
+
+  Section Filter.
+    Lemma filter_empty:
+      forall f,
+        map_filter empty f = nil.
+    Proof.
+    Admitted.
+
+    Lemma filter_nodup:
+      forall (m: t) f,
+        NoDupA (Raw.PX.eqk (elt:=elt)) (map_filter m f).
+    Proof.
+    Admitted.
+
+    Lemma filter_true_in:
+      forall (m: t) e f,
+        InA (Raw.PX.eqk (elt:=elt)) e (this m) ->
+        f e = true ->
+        InA (Raw.PX.eqk (elt:=elt)) e (map_filter m f).
+    Proof.
+    Admitted.
+
+    Lemma filter_false_not_in:
+      forall (m: t) e f,
+        InA (Raw.PX.eqk (elt:=elt)) e (this m) ->
+        f e = false ->
+        ~ InA (Raw.PX.eqk (elt:=elt)) e (map_filter m f).
+    Proof.
+    Admitted.
+
+    Lemma filter_not_in:
+      forall (m: t) e f,
+        ~ InA (Raw.PX.eqk (elt:=elt)) e (this m) ->
+        ~ InA (Raw.PX.eqk (elt:=elt)) e (map_filter m f).
+    Proof.
+    Admitted.
+
+    Lemma filter_length_equal:
+      forall m m' f,
+        equal m m' ->
+        length (map_filter m f) = length (map_filter m' f).
+    Proof.
+    Admitted.
+
+    Lemma filter_length_upd_false_true:
+      forall m m' f k,
+        f (k, get m k) = false ->
+        f (k, get m' k) = true ->
+        (forall k', ~ K.eq k' k -> f (k', get m k') = f (k', get m' k')) ->
+        length (map_filter m' f) = length (map_filter m f) + 1.
+    Proof.
+    Admitted.
+
+    Lemma filter_length_upd_true_false:
+      forall m m' f k,
+        f (k, get m k) = true ->
+        f (k, get m' k) = false ->
+        (forall k', ~ K.eq k' k -> f (k', get m k') = f (k', get m' k')) ->
+        length (map_filter m' f) = length (map_filter m f) - 1.
+    Proof.
+    Admitted.
+
+    Lemma filter_length_f_equal:
+      forall m m' f,
+        (forall k, f (k, get m k) = f (k, get m' k)) ->
+        length (map_filter m' f) = length (map_filter m f).
+    Proof.
+    Admitted.
+
+    Lemma filter_length_exist_nonzero:
+      forall m f,
+        (exists k, f (k, get m k) = true) ->
+        length (map_filter m f) > 0.
+    Proof.
+    Admitted.
+  End Filter.
 
   Hint Resolve
        (* Aux *)
@@ -844,7 +937,17 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
        upd_inc_unfold_equal upd_dec_unfold_equal
        (* Sum *)
        sum_empty sum_empty' sum_cons
-       sum_filter_true sum_filter_hd_true sum_filter_hd_false.
+       sum_filter_equal
+       sum_filter_true sum_filter_hd_true sum_filter_hd_false
+       sum_equal sum_filter_equal
+       (* filter *)
+       filter_empty filter_nodup
+       filter_true_in filter_false_not_in filter_not_in
+       filter_length_equal
+       filter_length_upd_false_true
+       filter_length_upd_true_false
+       filter_length_f_equal
+       filter_length_exist_nonzero.
 
   Hint Rewrite
        emp_zero
