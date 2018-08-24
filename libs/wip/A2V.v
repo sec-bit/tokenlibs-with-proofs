@@ -34,10 +34,6 @@ Notation "m '$' k" :=
   (A2V.get m k)
     (at level 50, left associativity, only parsing) : a2v_scope.
 
-Notation "m '$=' m'" :=
-  (A2V.equal m m')
-    (at level 50, left associativity, only parsing) : a2v_scope.
-
 Notation "m '$' '{' k '<~' v '}'" :=
   (A2V.upd m k v)
     (at level 50, left associativity, only parsing) : a2v_scope.
@@ -49,6 +45,10 @@ Notation "m '$' '{' k '<+~' v '}'" :=
 Notation "m '$' '{' k '<-~' v '}'" :=
   (A2V.upd_dec m k v)
     (at level 50, left associativity, only parsing) : a2v_scope.
+
+Notation "m '~' m'" :=
+  (A2V.equal m m')
+    (at level 70, no associativity, only parsing) : a2v_scope.
 
 Open Scope a2v_scope.
 

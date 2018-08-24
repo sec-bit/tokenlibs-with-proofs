@@ -35,10 +35,6 @@ Notation "m '$' '[' k0 ',' k1 ']'" :=
   (AA2V.get m (k0, k1))
     (at level 50, left associativity, only parsing) : aa2v_scope.
 
-Notation "m '$=' m'" :=
-  (AA2V.equal m m')
-    (at level 50, left associativity, only parsing) : aa2v_scope.
-
 Notation "m '$' '{' k0 ',' k1 '<~' v '}'" :=
   (AA2V.upd m (k0, k1) v)
     (at level 50, left associativity, only parsing) : aa2v_scope.
@@ -50,6 +46,10 @@ Notation "m '$' '{' k0 ',' k1  '<+~' v '}'" :=
 Notation "m '$' '{' k0 ',' k1 '<-~' v '}'" :=
   (AA2V.upd_dec m (k0, k1) v)
     (at level 50, left associativity, only parsing) : aa2v_scope.
+
+Notation "m '~' m'" :=
+  (AA2V.equal m m')
+    (at level 70, no associativity, only parsing) : aa2v_scope.
 
 Open Scope aa2v_scope.
 

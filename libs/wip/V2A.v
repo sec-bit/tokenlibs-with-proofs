@@ -20,20 +20,23 @@
 Require Import Mapping.
 Require Import ElemTypes.
 Require Import Types.
+Require Import LibEx.
 
-Module Import A2B := Mapping (Address_as_DT) (BoolElem).
-Definition a2b: Type := A2B.t.
+Module Import V2A := Mapping (UINT256_as_DT) (AddrElem).
+Definition v2a: Type := V2A.t.
 
-Notation "$0" := (A2B.empty) (only parsing) : a2b_scope.
+Notation "$0" := (V2A.empty) (only parsing) : v2a_scope.
 
 Notation "m '$' k" :=
-  (A2B.get m k)
-    (at level 50, left associativity, only parsing) : a2b_scope.
+  (V2A.get m k)
+    (at level 50, left associativity, only parsing) : v2a_scope.
 
 Notation "m '$' '{' k '<~' v '}'" :=
-  (A2B.upd m k v)
-    (at level 50, left associativity, only parsing) : a2b_scope.
+  (V2A.upd m k v)
+    (at level 50, left associativity, only parsing) : v2a_scope.
 
 Notation "m '~' m'" :=
-  (A2B.equal m m')
-    (at level 70, no associativity, only parsing) : a2b_scope.
+  (V2A.equal m m')
+    (at level 70, no associativity, only parsing) : v2a_scope.
+
+Open Scope v2a_scope.
