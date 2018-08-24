@@ -5,11 +5,11 @@ Model.v
 Prop.v
 Spec.v
 
--R ../libs proof
-../libs/AbsModel.v
-../libs/BNat.v
-../libs/LibEx.v
-../libs/Mapping.v
-../libs/TMap.v
-../libs/TMapLib.v
-../libs/Types.v
+-R ../libs/v1 proof
+../libs/v1/AbsModel.v
+../libs/v1/BNat.v
+../libs/v1/LibEx.v
+../libs/v1/Mapping.v
+../libs/v1/TMap.v
+../libs/v1/TMapLib.v
+../libs/v1/Types.v
