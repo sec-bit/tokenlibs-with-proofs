@@ -838,7 +838,9 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
       forall f,
         map_filter empty f = nil.
     Proof.
-    Admitted.
+      auto.
+    Qed.
+
 
     Lemma filter_nodup:
       forall (m: t) f,
