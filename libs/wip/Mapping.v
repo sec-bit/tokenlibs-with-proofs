@@ -895,7 +895,18 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
       forall (m: t) f,
         NoDupA (Raw.PX.eqk (elt:=elt)) (map_filter m f).
     Proof.
-    Admitted.
+      intros m f.
+      destruct m as [this nodup].
+      induction this; simpl; auto.
+
+      inversion nodup; subst.
+      case_eq (f a); intros Hf.
+      - rewrite (filter_hd_true nodup H2 Hf).
+        constructor; auto.
+        apply filter_not_in; auto.
+      - rewrite (filter_hd_false nodup H2 Hf).
+        apply IHthis; auto.
+    Qed.
 
     Lemma filter_true_in:
       forall (m: t) e f,
@@ -986,7 +997,8 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
        sum_equal sum_filter_equal
        (* filter *)
        filter_empty filter_nodup
-       filter_true_in filter_false_not_in filter_not_in
+       filter_hd_true filter_hd_false filter_not_in
+       filter_true_in filter_false_not_in
        filter_length_equal
        filter_length_upd_false_true
        filter_length_upd_true_false
