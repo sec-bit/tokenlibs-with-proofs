@@ -17,6 +17,8 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *)
 
+Require Import ZArith.
+
 Require Import Mapping.
 Require Import Types.
 
@@ -28,6 +30,12 @@ Module ValElem <: ElemType.
   Definition elt_add := plus_with_overflow.
   Definition elt_sub := minus_with_underflow.
   Definition elt_eq := fun (x x': elt) => x = x'.
+
+  Lemma elt_eq_dec:
+    forall (x y: elt), { x = y } + { ~ x = y }.
+  Proof.
+    exact Nat.eq_dec.
+  Qed.
 
   Lemma elt_add_raw_comm:
     forall x y, elt_add_raw x y = elt_add_raw y x.
@@ -65,6 +73,12 @@ Module AddrElem <: ElemType.
   Definition elt_sub := minus_with_underflow.
   Definition elt_eq := fun (x x': elt) => x = x'.
 
+  Lemma elt_eq_dec:
+    forall (x y: elt), { x = y } + { ~ x = y }.
+  Proof.
+    exact Nat.eq_dec.
+  Qed.
+
   Lemma elt_add_raw_comm:
     forall x y, elt_add_raw x y = elt_add_raw y x.
   Proof.
@@ -100,6 +114,13 @@ Module BoolElem <: ElemType.
   Definition elt_add := orb.
   Definition elt_sub := andb.
   Definition elt_eq := fun (b b': elt) => b = b'.
+
+  Lemma elt_eq_dec:
+    forall (x y: elt), { x = y } + { ~ x = y }.
+  Proof.
+    destruct x; destruct y;
+      solve [ left; auto with bool | right; auto with bool ].
+  Qed.
 
   Lemma elt_add_raw_comm:
     forall x y, elt_add_raw x y = elt_add_raw y x.

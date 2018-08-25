@@ -39,6 +39,9 @@ Module Type ElemType.
   Parameter Inline elt_sub: elt -> elt -> elt.
   Parameter Inline elt_eq: elt -> elt -> Prop.
 
+  Axiom elt_eq_dec:
+    forall (x y: elt), { x = y } + { ~ x = y }.
+
   Axiom elt_add_raw_comm:
     forall x y, elt_eq (elt_add_raw x y) (elt_add_raw y x).
 
@@ -910,11 +913,66 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
 
     Lemma filter_true_in:
       forall (m: t) e f,
-        InA (Raw.PX.eqk (elt:=elt)) e (this m) ->
+        InA (Raw.PX.eqke (elt:=elt)) e (this m) ->
+        (forall e0 e1, K.eq (fst e0) (fst e1) -> snd e0 = snd e1 -> f e0 = f e1) ->
         f e = true ->
-        InA (Raw.PX.eqk (elt:=elt)) e (map_filter m f).
+        InA (Raw.PX.eqke (elt:=elt)) e (map_filter m f).
     Proof.
-    Admitted.
+      intros m e f Hin Hf Hfe_true.
+      destruct m as [this nodup].
+      induction this; simpl; auto.
+
+      inversion nodup; subst; simpl in *.
+      destruct a as [k v].
+      destruct e as [k' v'].
+      destruct (K.eq_dec k' k).
+
+      - (* k' = k *)
+        destruct (elt_eq_dec v' v).
+        + (* v' = v *)
+          generalize (Hf (k', v') (k, v) e e0); intros Hfkv.
+          rewrite Hfe_true in Hfkv; apply eq_sym in Hfkv.
+          rewrite (filter_hd_true nodup H2 Hfkv).
+          constructor 1; auto.
+
+        + (* v' <> v *)
+          case_eq (f (k, v)); intros Hfkv.
+          * rewrite (filter_hd_true nodup H2 Hfkv).
+            constructor 2; auto.
+            apply IHthis; auto.
+            apply InA_cons in Hin;
+              unfold Raw.PX.eqke in Hin;
+              simpl in Hin;
+              destruct Hin; auto.
+            destruct H; contradiction.
+          * rewrite (filter_hd_false nodup H2 Hfkv).
+            apply IHthis.
+            apply InA_cons in Hin;
+              unfold Raw.PX.eqke in Hin;
+              simpl in Hin;
+              destruct Hin; auto.
+            destruct H; contradiction.
+
+      - (* k' <> k *)
+        case_eq (f (k, v)); intros Hfkv.
+
+        + rewrite (filter_hd_true nodup H2 Hfkv).
+          constructor 2; auto.
+          apply IHthis; auto.
+          apply InA_cons in Hin;
+            unfold Raw.PX.eqke in Hin;
+            simpl in Hin;
+            destruct Hin; auto.
+          destruct H; contradiction.
+
+        + rewrite (filter_hd_false nodup H2 Hfkv).
+          apply IHthis.
+          apply InA_cons in Hin;
+            unfold Raw.PX.eqke in Hin;
+            simpl in Hin;
+            destruct Hin; auto.
+          destruct H; contradiction.
+    Qed.
 
     Lemma filter_false_not_in:
       forall (m: t) e f,
