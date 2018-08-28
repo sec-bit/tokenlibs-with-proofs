@@ -913,7 +913,7 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
       rewrite Hf_false; auto.
     Qed.
 
-    Lemma filter_not_in:
+    Lemma filter_not_in_eqk:
       forall (m: t) e f,
         ~ InA (Raw.PX.eqk (elt:=elt)) e (this m) ->
         ~ InA (Raw.PX.eqk (elt:=elt)) e (map_filter m f).
@@ -953,7 +953,7 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
       case_eq (f a); intros Hf.
       - rewrite (filter_hd_true nodup H2 Hf).
         constructor; auto.
-        apply filter_not_in; auto.
+        apply filter_not_in_eqk; auto.
       - rewrite (filter_hd_false nodup H2 Hf).
         apply IHthis; auto.
     Qed.
@@ -1101,8 +1101,7 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
        sum_filter_true sum_filter_hd_true sum_filter_hd_false
        sum_equal sum_filter_equal
        (* filter *)
-       filter_empty filter_nodup
-       filter_hd_true filter_hd_false filter_not_in
+       filter_hd_true filter_hd_false filter_not_in_eqk
        filter_true_in filter_false_not_in
        filter_length_equal
        filter_length_upd_false_true
