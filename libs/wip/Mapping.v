@@ -941,6 +941,34 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
         apply IHthis; auto.
     Qed.
 
+    Lemma filter_not_in_eqke:
+      forall (m: t) e f,
+        ~ InA (Raw.PX.eqke (elt:=elt)) e (this m) ->
+        ~ InA (Raw.PX.eqke (elt:=elt)) e (map_filter m f).
+    Proof.
+      intros m e f Hnot_in.
+      destruct m as [this nodup].
+      induction this; simpl; auto.
+
+      inversion nodup; subst; simpl in *.
+      case_eq (f a); intros Hf; simpl in *.
+
+      - rewrite (filter_hd_true nodup H2 Hf).
+        intros Hin; apply InA_cons in Hin; destruct Hin.
+        + apply Hnot_in. constructor 1; auto.
+        + destruct a as [k v].
+          destruct e as [k' v'].
+          generalize (not_InA_not_InA_tl Hnot_in); intros Hnot_in'.
+          generalize (IHthis H2 Hnot_in'); clear Hnot_in'; intros Hnot_in'.
+          apply Hnot_in'; auto.
+
+      - rewrite (filter_hd_false nodup H2 Hf).
+        destruct a as [k v].
+        destruct e as [k' v'].
+        generalize (not_InA_not_InA_tl Hnot_in); intros Hnot_in'.
+        apply IHthis; auto.
+    Qed.
+
     Lemma filter_nodup:
       forall (m: t) f,
         NoDupA (Raw.PX.eqk (elt:=elt)) (map_filter m f).
@@ -1102,6 +1130,7 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
        sum_equal sum_filter_equal
        (* filter *)
        filter_hd_true filter_hd_false filter_not_in_eqk
+       filter_hd_true filter_hd_false filter_not_in_eqk filter_not_in_eqke
        filter_true_in filter_false_not_in
        filter_length_equal
        filter_length_upd_false_true
