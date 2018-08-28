@@ -39,6 +39,9 @@ Module Type ElemType.
   Parameter Inline elt_sub: elt -> elt -> elt.
   Parameter Inline elt_eq: elt -> elt -> Prop.
 
+  Axiom elt_eq_dec:
+    forall (x y: elt), { x = y } + { ~ x = y }.
+
   Axiom elt_add_raw_comm:
     forall x y, elt_eq (elt_add_raw x y) (elt_add_raw y x).
 
@@ -92,6 +95,15 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
     filter f (elements m).
 
   Section Aux.
+    Lemma kv_eq_dec:
+      forall (e e': K.t * elt), { Raw.PX.eqke e e' } + { ~ Raw.PX.eqke e e' }.
+    Proof.
+      intros [k v] [k' v'].
+      destruct (K.eq_dec k k'); destruct (elt_eq_dec v v');
+        unfold Raw.PX.eqke;
+        simpl; tauto.
+    Qed.
+
     Lemma not_eq_sym:
       forall (k k': K.t), ~ K.eq k k' -> ~ K.eq k' k.
     Proof.
@@ -170,17 +182,17 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
       constructor 1; auto.
     Qed.
 
-    Lemma not_in_not_in:
-      forall k v k' v' m,
-        ~ InA (Raw.PX.eqk (elt := elt)) (k, v) ((k', v') :: m) ->
-        ~ InA (Raw.PX.eqk (elt := elt)) (k, v) m.
+    Lemma not_InA_not_InA_tl:
+      forall A (eqA: A -> A -> Prop) e e' m,
+        ~ InA eqA e' (e :: m) ->
+        ~ InA eqA e' m.
     Proof.
-      intros k v k' v' m Hnotin Hin.
-      apply Hnotin.
+      intros k v k' v' m Hnot_in Hin.
+      apply Hnot_in.
       constructor 2; auto.
     Qed.
 
-    Lemma not_in_not_in':
+    Lemma not_In_not_In_tl:
       forall k a m nodup nodup',
         ~ In (elt:=elt) k {| this := a :: m; NoDup := nodup |} ->
         ~ In (elt:=elt) k {| this := m; NoDup := nodup' |}.
@@ -224,7 +236,7 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
 
         + apply Hneq in e0; inversion e0.
 
-        + generalize (not_in_not_in H1); intros Hnotin.
+        + generalize (not_InA_not_InA_tl H1); intros Hnotin.
 
           assert (Hlst: (k, v) :: (t, e) :: m = ((k, v) :: nil) ++ (t, e) :: m).
           { reflexivity. }
@@ -284,6 +296,53 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
     Qed.
     Arguments filter_true_eq [T].
 
+    Lemma find_eq:
+      forall (k k': K.t) (m: t),
+        K.eq k k' ->
+        find k m = find k' m.
+    Proof.
+      intros k k' m Hkeq.
+      destruct m as [this nodup].
+      unfold find; simpl.
+      rewrite (Raw.find_eq nodup Hkeq).
+      reflexivity.
+    Qed.
+
+    Lemma in_find:
+      forall m k v nodup,
+        InA (Raw.PX.eqke (elt:=elt)) (k, v) m ->
+        find k {| this := m; NoDup := nodup |} = Some v.
+    Proof.
+      induction m; simpl; auto.
+
+      - intros k v nodup Hin.
+        inversion Hin.
+
+      - intros k v nodup Hin.
+        destruct a as [k' v'].
+        unfold find; simpl.
+        destruct (K.eq_dec k k').
+        + apply InA_cons in Hin; simpl in Hin.
+          destruct Hin.
+          * destruct H; simpl in *; congruence.
+          * inversion nodup; subst.
+            apply Raw.PX.InA_eqke_eqk in H.
+            assert (Hkeq: Raw.PX.eqk (k, v) (k', v')).
+            {
+              unfold Raw.PX.eqk; simpl; auto.
+            }
+            apply (Raw.PX.InA_eqk Hkeq) in H.
+            congruence.
+        + unfold find in IHm; simpl in IHm.
+          inversion nodup; subst.
+          apply IHm; auto.
+          apply InA_cons in Hin.
+          destruct Hin; auto.
+          unfold Raw.PX.eqke in H; simpl in H.
+          destruct H as [Hkeq _].
+          congruence.
+    Qed.
+
     Lemma not_in_not_find:
       forall k v m nodup,
         ~ InA (Raw.PX.eqk (elt:=elt)) (k, v) m ->
@@ -294,7 +353,7 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
       intros nodup Hnotin.
       inversion nodup; subst.
       destruct a.
-      generalize (not_in_not_in Hnotin); intros Hnotin'.
+      generalize (not_InA_not_InA_tl Hnotin); intros Hnotin'.
       generalize (IHm H2 Hnotin'); intros Hfind.
       generalize (not_in_neq Hnotin); intros Hneq.
       rewrite (find_hd_neq_tl nodup H2 Hneq).
@@ -310,7 +369,7 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
 
       intros k Hnotin.
       inversion NoDup0; subst.
-      generalize (not_in_not_in' (nodup' := H2) Hnotin); intros Hnotin'.
+      generalize (not_In_not_In_tl (nodup' := H2) Hnotin); intros Hnotin'.
       generalize (IHthis0 H2 k Hnotin'); intros Hfind.
       destruct a.
       generalize (not_in_neq' Hnotin); intros Hneq.
@@ -838,36 +897,259 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
       forall f,
         map_filter empty f = nil.
     Proof.
-    Admitted.
+      auto.
+    Qed.
+
+    Lemma filter_nil:
+      forall f nodup,
+        map_filter {| this := nil; NoDup := nodup |} f = nil.
+    Proof.
+      auto.
+    Qed.
+
+    Lemma filter_hd_true:
+      forall f e this nodup nodup',
+        f e = true ->
+        map_filter {| this := e :: this; NoDup := nodup |} f =
+        e :: map_filter {| this := this; NoDup := nodup' |} f.
+    Proof.
+      intros f e this nodup nodup' Hf_true.
+      unfold map_filter; simpl.
+      rewrite Hf_true; auto.
+    Qed.
+
+    Lemma filter_hd_false:
+      forall f e this nodup nodup',
+        f e = false ->
+        map_filter {| this := e :: this; NoDup := nodup |} f =
+        map_filter {| this := this; NoDup := nodup' |} f.
+    Proof.
+      intros f e this nodup nodup' Hf_false.
+      unfold map_filter; simpl.
+      rewrite Hf_false; auto.
+    Qed.
+
+    Lemma filter_not_in_eqk:
+      forall (m: t) e f,
+        ~ InA (Raw.PX.eqk (elt:=elt)) e (this m) ->
+        ~ InA (Raw.PX.eqk (elt:=elt)) e (map_filter m f).
+    Proof.
+      intros m e f Hnot_in.
+      destruct m as [this nodup].
+      induction this; simpl; auto.
+
+      inversion nodup; subst; simpl in *.
+      case_eq (f a); intros Hf; simpl in *.
+
+      - rewrite (filter_hd_true nodup H2 Hf).
+        intros Hin; apply InA_cons in Hin; destruct Hin.
+        + apply Hnot_in. constructor 1; auto.
+        + destruct a as [k v].
+          destruct e as [k' v'].
+          generalize (not_InA_not_InA_tl Hnot_in); intros Hnot_in'.
+          generalize (IHthis H2 Hnot_in'); clear Hnot_in'; intros Hnot_in'.
+          apply Hnot_in'; auto.
+
+      - rewrite (filter_hd_false nodup H2 Hf).
+        destruct a as [k v].
+        destruct e as [k' v'].
+        generalize (not_InA_not_InA_tl Hnot_in); intros Hnot_in'.
+        apply IHthis; auto.
+    Qed.
+
+    Lemma filter_not_in_eqke:
+      forall (m: t) e f,
+        ~ InA (Raw.PX.eqke (elt:=elt)) e (this m) ->
+        ~ InA (Raw.PX.eqke (elt:=elt)) e (map_filter m f).
+    Proof.
+      intros m e f Hnot_in.
+      destruct m as [this nodup].
+      induction this; simpl; auto.
+
+      inversion nodup; subst; simpl in *.
+      case_eq (f a); intros Hf; simpl in *.
+
+      - rewrite (filter_hd_true nodup H2 Hf).
+        intros Hin; apply InA_cons in Hin; destruct Hin.
+        + apply Hnot_in. constructor 1; auto.
+        + destruct a as [k v].
+          destruct e as [k' v'].
+          generalize (not_InA_not_InA_tl Hnot_in); intros Hnot_in'.
+          generalize (IHthis H2 Hnot_in'); clear Hnot_in'; intros Hnot_in'.
+          apply Hnot_in'; auto.
+
+      - rewrite (filter_hd_false nodup H2 Hf).
+        destruct a as [k v].
+        destruct e as [k' v'].
+        generalize (not_InA_not_InA_tl Hnot_in); intros Hnot_in'.
+        apply IHthis; auto.
+    Qed.
 
     Lemma filter_nodup:
       forall (m: t) f,
         NoDupA (Raw.PX.eqk (elt:=elt)) (map_filter m f).
     Proof.
-    Admitted.
+      intros m f.
+      destruct m as [this nodup].
+      induction this; simpl; auto.
+
+      inversion nodup; subst.
+      case_eq (f a); intros Hf.
+      - rewrite (filter_hd_true nodup H2 Hf).
+        constructor; auto.
+        apply filter_not_in_eqk; auto.
+      - rewrite (filter_hd_false nodup H2 Hf).
+        apply IHthis; auto.
+    Qed.
 
     Lemma filter_true_in:
       forall (m: t) e f,
-        InA (Raw.PX.eqk (elt:=elt)) e (this m) ->
+        InA (Raw.PX.eqke (elt:=elt)) e (this m) ->
+        (forall e0 e1, K.eq (fst e0) (fst e1) -> snd e0 = snd e1 -> f e0 = f e1) ->
         f e = true ->
-        InA (Raw.PX.eqk (elt:=elt)) e (map_filter m f).
+        InA (Raw.PX.eqke (elt:=elt)) e (map_filter m f).
     Proof.
-    Admitted.
+      intros m e f Hin Hf Hfe_true.
+      destruct m as [this nodup].
+      induction this; simpl; auto.
+
+      inversion nodup; subst; simpl in *.
+      destruct a as [k v].
+      destruct e as [k' v'].
+      destruct (K.eq_dec k' k).
+
+      - (* k' = k *)
+        destruct (elt_eq_dec v' v).
+        + (* v' = v *)
+          generalize (Hf (k', v') (k, v) e e0); intros Hfkv.
+          rewrite Hfe_true in Hfkv; apply eq_sym in Hfkv.
+          rewrite (filter_hd_true nodup H2 Hfkv).
+          constructor 1; auto.
+
+        + (* v' <> v *)
+          case_eq (f (k, v)); intros Hfkv.
+          * rewrite (filter_hd_true nodup H2 Hfkv).
+            constructor 2; auto.
+            apply IHthis; auto.
+            apply InA_cons in Hin;
+              unfold Raw.PX.eqke in Hin;
+              simpl in Hin;
+              destruct Hin; auto.
+            destruct H; contradiction.
+          * rewrite (filter_hd_false nodup H2 Hfkv).
+            apply IHthis.
+            apply InA_cons in Hin;
+              unfold Raw.PX.eqke in Hin;
+              simpl in Hin;
+              destruct Hin; auto.
+            destruct H; contradiction.
+
+      - (* k' <> k *)
+        case_eq (f (k, v)); intros Hfkv.
+
+        + rewrite (filter_hd_true nodup H2 Hfkv).
+          constructor 2; auto.
+          apply IHthis; auto.
+          apply InA_cons in Hin;
+            unfold Raw.PX.eqke in Hin;
+            simpl in Hin;
+            destruct Hin; auto.
+          destruct H; contradiction.
+
+        + rewrite (filter_hd_false nodup H2 Hfkv).
+          apply IHthis.
+          apply InA_cons in Hin;
+            unfold Raw.PX.eqke in Hin;
+            simpl in Hin;
+            destruct Hin; auto.
+          destruct H; contradiction.
+    Qed.
 
     Lemma filter_false_not_in:
-      forall (m: t) e f,
-        InA (Raw.PX.eqk (elt:=elt)) e (this m) ->
-        f e = false ->
-        ~ InA (Raw.PX.eqk (elt:=elt)) e (map_filter m f).
+      forall f,
+        (forall e0 e1, K.eq (fst e0) (fst e1) -> snd e0 = snd e1 -> f e0 = f e1) ->
+        forall (m: t) e,
+          f e = false ->
+          ~ InA (Raw.PX.eqke (elt:=elt)) e (map_filter m f).
     Proof.
-    Admitted.
+      intros f Hf m.
+      destruct m as [this nodup].
+      induction this; simpl; auto.
 
-    Lemma filter_not_in:
-      forall (m: t) e f,
-        ~ InA (Raw.PX.eqk (elt:=elt)) e (this m) ->
-        ~ InA (Raw.PX.eqk (elt:=elt)) e (map_filter m f).
-    Proof.
-    Admitted.
+      - intros; rewrite filter_nil.
+        intros Hin'; eapply (proj1 (InA_nil _ _ )); eauto.
+
+      - intros e Hfe_false.
+        case (InA_dec kv_eq_dec e (a :: this0));
+          intros Hin_dec.
+
+        + destruct a as [k v].
+          destruct e as [k' v'].
+          inversion nodup; subst; simpl in *.
+
+          destruct (K.eq_dec k' k).
+
+          * (* k' = k *)
+            {
+              destruct (elt_eq_dec v' v).
+
+              - (* v' = v *)
+                generalize (Hf (k', v') (k, v) e e0); clear Hf; intros Hf.
+                rewrite Hfe_false in Hf; apply eq_sym in Hf.
+                rewrite (filter_hd_false nodup H2 Hf).
+                eapply filter_not_in_eqke; eauto.
+                simpl; intros Hin.
+                apply H1; apply Raw.PX.InA_eqke_eqk.
+                apply InA_eqA with (x := (k', v')); auto.
+                apply Raw.PX.eqke_equiv.
+
+              - (* v' <> v *)
+                apply InA_cons in Hin_dec.
+                destruct Hin_dec.
+
+                (* eliminate impossible branch *)
+                destruct H; simpl in *; congruence.
+
+                case_eq (f (k, v)); intros Hf'.
+
+                + rewrite (filter_hd_true nodup H2 Hf').
+                  intros Hin; apply InA_cons in Hin; destruct Hin.
+
+                  (* eliminate impossible branch *)
+                  destruct H0; simpl in *; congruence.
+
+                  generalize H0; clear H0.
+                  apply IHthis; auto.
+
+                + rewrite (filter_hd_false nodup H2 Hf').
+                  apply IHthis; auto.
+            }
+
+          * (* k' <> k *)
+            apply InA_cons in Hin_dec.
+            destruct Hin_dec.
+
+            (* eliminate impossible branch *)
+            destruct H; simpl in *; congruence.
+
+            case_eq (f (k, v)); intros Hf'.
+            {
+              rewrite (filter_hd_true nodup H2 Hf').
+              intros Hin; apply InA_cons in Hin; destruct Hin.
+
+              (* eliminate impossible branch *)
+              destruct H0; simpl in *; congruence.
+
+              generalize H0; clear H0.
+              apply IHthis; auto.
+            }
+            {
+              rewrite (filter_hd_false nodup H2 Hf').
+              apply IHthis; auto.
+            }
+
+        + apply filter_not_in_eqke; auto.
+    Qed.
 
     Lemma filter_length_equal:
       forall m m' f,
@@ -913,7 +1195,7 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
        (* Aux *)
        not_eq_sym
        find_add_eq find_add_neq
-       not_in_neq not_in_neq' not_in_not_in not_in_not_in'
+       not_in_neq not_in_neq' not_InA_not_InA_tl not_In_not_In_tl
        find_hd_eq find_hd_neq_none find_hd_neq_tl
        find_get not_find_get
        filter_true_eq
@@ -941,8 +1223,9 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
        sum_filter_true sum_filter_hd_true sum_filter_hd_false
        sum_equal sum_filter_equal
        (* filter *)
-       filter_empty filter_nodup
-       filter_true_in filter_false_not_in filter_not_in
+       filter_empty filter_nil filter_nodup
+       filter_hd_true filter_hd_false filter_not_in_eqk filter_not_in_eqke
+       filter_true_in filter_false_not_in
        filter_length_equal
        filter_length_upd_false_true
        filter_length_upd_true_false
