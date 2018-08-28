@@ -287,6 +287,53 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
     Qed.
     Arguments filter_true_eq [T].
 
+    Lemma find_eq:
+      forall (k k': K.t) (m: t),
+        K.eq k k' ->
+        find k m = find k' m.
+    Proof.
+      intros k k' m Hkeq.
+      destruct m as [this nodup].
+      unfold find; simpl.
+      rewrite (Raw.find_eq nodup Hkeq).
+      reflexivity.
+    Qed.
+
+    Lemma in_find:
+      forall m k v nodup,
+        InA (Raw.PX.eqke (elt:=elt)) (k, v) m ->
+        find k {| this := m; NoDup := nodup |} = Some v.
+    Proof.
+      induction m; simpl; auto.
+
+      - intros k v nodup Hin.
+        inversion Hin.
+
+      - intros k v nodup Hin.
+        destruct a as [k' v'].
+        unfold find; simpl.
+        destruct (K.eq_dec k k').
+        + apply InA_cons in Hin; simpl in Hin.
+          destruct Hin.
+          * destruct H; simpl in *; congruence.
+          * inversion nodup; subst.
+            apply Raw.PX.InA_eqke_eqk in H.
+            assert (Hkeq: Raw.PX.eqk (k, v) (k', v')).
+            {
+              unfold Raw.PX.eqk; simpl; auto.
+            }
+            apply (Raw.PX.InA_eqk Hkeq) in H.
+            congruence.
+        + unfold find in IHm; simpl in IHm.
+          inversion nodup; subst.
+          apply IHm; auto.
+          apply InA_cons in Hin.
+          destruct Hin; auto.
+          unfold Raw.PX.eqke in H; simpl in H.
+          destruct H as [Hkeq _].
+          congruence.
+    Qed.
+
     Lemma not_in_not_find:
       forall k v m nodup,
         ~ InA (Raw.PX.eqk (elt:=elt)) (k, v) m ->
