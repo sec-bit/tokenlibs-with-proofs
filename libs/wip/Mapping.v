@@ -891,6 +891,13 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
       auto.
     Qed.
 
+    Lemma filter_nil:
+      forall f nodup,
+        map_filter {| this := nil; NoDup := nodup |} f = nil.
+    Proof.
+      auto.
+    Qed.
+
     Lemma filter_hd_true:
       forall f e this nodup nodup',
         f e = true ->
