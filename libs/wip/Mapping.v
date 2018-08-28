@@ -95,6 +95,15 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
     filter f (elements m).
 
   Section Aux.
+    Lemma kv_eq_dec:
+      forall (e e': K.t * elt), { Raw.PX.eqke e e' } + { ~ Raw.PX.eqke e e' }.
+    Proof.
+      intros [k v] [k' v'].
+      destruct (K.eq_dec k k'); destruct (elt_eq_dec v v');
+        unfold Raw.PX.eqke;
+        simpl; tauto.
+    Qed.
+
     Lemma not_eq_sym:
       forall (k k': K.t), ~ K.eq k k' -> ~ K.eq k' k.
     Proof.
@@ -1057,12 +1066,90 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
     Qed.
 
     Lemma filter_false_not_in:
-      forall (m: t) e f,
-        InA (Raw.PX.eqk (elt:=elt)) e (this m) ->
-        f e = false ->
-        ~ InA (Raw.PX.eqk (elt:=elt)) e (map_filter m f).
+      forall f,
+        (forall e0 e1, K.eq (fst e0) (fst e1) -> snd e0 = snd e1 -> f e0 = f e1) ->
+        forall (m: t) e,
+          f e = false ->
+          ~ InA (Raw.PX.eqke (elt:=elt)) e (map_filter m f).
     Proof.
-    Admitted.
+      intros f Hf m.
+      destruct m as [this nodup].
+      induction this; simpl; auto.
+
+      - intros; rewrite filter_nil.
+        intros Hin'; eapply (proj1 (InA_nil _ _ )); eauto.
+
+      - intros e Hfe_false.
+        case (InA_dec kv_eq_dec e (a :: this0));
+          intros Hin_dec.
+
+        + destruct a as [k v].
+          destruct e as [k' v'].
+          inversion nodup; subst; simpl in *.
+
+          destruct (K.eq_dec k' k).
+
+          * (* k' = k *)
+            {
+              destruct (elt_eq_dec v' v).
+
+              - (* v' = v *)
+                generalize (Hf (k', v') (k, v) e e0); clear Hf; intros Hf.
+                rewrite Hfe_false in Hf; apply eq_sym in Hf.
+                rewrite (filter_hd_false nodup H2 Hf).
+                eapply filter_not_in_eqke; eauto.
+                simpl; intros Hin.
+                apply H1; apply Raw.PX.InA_eqke_eqk.
+                apply InA_eqA with (x := (k', v')); auto.
+                apply Raw.PX.eqke_equiv.
+
+              - (* v' <> v *)
+                apply InA_cons in Hin_dec.
+                destruct Hin_dec.
+
+                (* eliminate impossible branch *)
+                destruct H; simpl in *; congruence.
+
+                case_eq (f (k, v)); intros Hf'.
+
+                + rewrite (filter_hd_true nodup H2 Hf').
+                  intros Hin; apply InA_cons in Hin; destruct Hin.
+
+                  (* eliminate impossible branch *)
+                  destruct H0; simpl in *; congruence.
+
+                  generalize H0; clear H0.
+                  apply IHthis; auto.
+
+                + rewrite (filter_hd_false nodup H2 Hf').
+                  apply IHthis; auto.
+            }
+
+          * (* k' <> k *)
+            apply InA_cons in Hin_dec.
+            destruct Hin_dec.
+
+            (* eliminate impossible branch *)
+            destruct H; simpl in *; congruence.
+
+            case_eq (f (k, v)); intros Hf'.
+            {
+              rewrite (filter_hd_true nodup H2 Hf').
+              intros Hin; apply InA_cons in Hin; destruct Hin.
+
+              (* eliminate impossible branch *)
+              destruct H0; simpl in *; congruence.
+
+              generalize H0; clear H0.
+              apply IHthis; auto.
+            }
+            {
+              rewrite (filter_hd_false nodup H2 Hf').
+              apply IHthis; auto.
+            }
+
+        + apply filter_not_in_eqke; auto.
+    Qed.
 
     Lemma filter_length_equal:
       forall m m' f,
@@ -1136,7 +1223,7 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
        sum_filter_true sum_filter_hd_true sum_filter_hd_false
        sum_equal sum_filter_equal
        (* filter *)
-       filter_hd_true filter_hd_false filter_not_in_eqk
+       filter_empty filter_nil filter_nodup
        filter_hd_true filter_hd_false filter_not_in_eqk filter_not_in_eqke
        filter_true_in filter_false_not_in
        filter_length_equal
