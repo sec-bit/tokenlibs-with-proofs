@@ -173,17 +173,17 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
       constructor 1; auto.
     Qed.
 
-    Lemma not_in_not_in:
-      forall k v k' v' m,
-        ~ InA (Raw.PX.eqk (elt := elt)) (k, v) ((k', v') :: m) ->
-        ~ InA (Raw.PX.eqk (elt := elt)) (k, v) m.
+    Lemma not_InA_not_InA_tl:
+      forall A (eqA: A -> A -> Prop) e e' m,
+        ~ InA eqA e' (e :: m) ->
+        ~ InA eqA e' m.
     Proof.
-      intros k v k' v' m Hnotin Hin.
-      apply Hnotin.
+      intros k v k' v' m Hnot_in Hin.
+      apply Hnot_in.
       constructor 2; auto.
     Qed.
 
-    Lemma not_in_not_in':
+    Lemma not_In_not_In_tl:
       forall k a m nodup nodup',
         ~ In (elt:=elt) k {| this := a :: m; NoDup := nodup |} ->
         ~ In (elt:=elt) k {| this := m; NoDup := nodup' |}.
@@ -227,7 +227,7 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
 
         + apply Hneq in e0; inversion e0.
 
-        + generalize (not_in_not_in H1); intros Hnotin.
+        + generalize (not_InA_not_InA_tl H1); intros Hnotin.
 
           assert (Hlst: (k, v) :: (t, e) :: m = ((k, v) :: nil) ++ (t, e) :: m).
           { reflexivity. }
@@ -297,7 +297,7 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
       intros nodup Hnotin.
       inversion nodup; subst.
       destruct a.
-      generalize (not_in_not_in Hnotin); intros Hnotin'.
+      generalize (not_InA_not_InA_tl Hnotin); intros Hnotin'.
       generalize (IHm H2 Hnotin'); intros Hfind.
       generalize (not_in_neq Hnotin); intros Hneq.
       rewrite (find_hd_neq_tl nodup H2 Hneq).
@@ -313,7 +313,7 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
 
       intros k Hnotin.
       inversion NoDup0; subst.
-      generalize (not_in_not_in' (nodup' := H2) Hnotin); intros Hnotin'.
+      generalize (not_In_not_In_tl (nodup' := H2) Hnotin); intros Hnotin'.
       generalize (IHthis0 H2 k Hnotin'); intros Hfind.
       destruct a.
       generalize (not_in_neq' Hnotin); intros Hneq.
@@ -883,14 +883,14 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
         + apply Hnot_in. constructor 1; auto.
         + destruct a as [k v].
           destruct e as [k' v'].
-          generalize (not_in_not_in Hnot_in); intros Hnot_in'.
+          generalize (not_InA_not_InA_tl Hnot_in); intros Hnot_in'.
           generalize (IHthis H2 Hnot_in'); clear Hnot_in'; intros Hnot_in'.
           apply Hnot_in'; auto.
 
       - rewrite (filter_hd_false nodup H2 Hf).
         destruct a as [k v].
         destruct e as [k' v'].
-        generalize (not_in_not_in Hnot_in); intros Hnot_in'.
+        generalize (not_InA_not_InA_tl Hnot_in); intros Hnot_in'.
         apply IHthis; auto.
     Qed.
 
@@ -1026,7 +1026,7 @@ Module Mapping (K: DecidableType) (Elt: ElemType).
        (* Aux *)
        not_eq_sym
        find_add_eq find_add_neq
-       not_in_neq not_in_neq' not_in_not_in not_in_not_in'
+       not_in_neq not_in_neq' not_InA_not_InA_tl not_In_not_In_tl
        find_hd_eq find_hd_neq_none find_hd_neq_tl
        find_get not_find_get
        filter_true_eq
